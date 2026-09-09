@@ -21,9 +21,11 @@ export async function checkLoginRateLimit(email: string, ip: string): Promise<Ra
   ]);
 
   if (ipFailures >= MAX_FAILURES_PER_IP) {
+    console.warn(`LOGIN_RATE_LIMIT_BLOCKED ip=${ip} email=${email} reason=ip_limit`);
     return { allowed: false, reason: `Too many failed login attempts from this network. Try again in ${WINDOW_MINUTES} minutes.` };
   }
   if (emailFailures >= MAX_FAILURES_PER_EMAIL) {
+    console.warn(`LOGIN_RATE_LIMIT_BLOCKED ip=${ip} email=${email} reason=email_limit`);
     return { allowed: false, reason: `Too many failed login attempts for this account. Try again in ${WINDOW_MINUTES} minutes.` };
   }
 
@@ -31,6 +33,9 @@ export async function checkLoginRateLimit(email: string, ip: string): Promise<Ra
 }
 
 export async function recordLoginAttempt(email: string, ip: string, success: boolean) {
+  if (!success) {
+    console.warn(`LOGIN_FAILED ip=${ip} email=${email}`);
+  }
   try {
     await prisma.tbl_login_attempt.create({ data: { email, ip_address: ip, success } });
 

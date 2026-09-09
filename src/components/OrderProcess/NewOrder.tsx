@@ -255,37 +255,22 @@ export default function NewSale() {
     const s = searchTerm.trim().toLowerCase()
     if (!s) { setSearchResults([]); setHighlightedIdx(-1); return }
 
-    // Fetch fresh product list so inventory quantities are up-to-date
-    FetchProducts(activeShopId).then(res => {
-      const fresh: Product[] = (res || []).map((p: any) => ({
-        product_id:   p.product_id,
-        product_code: p.product_code,
-        product_name: p.product_name,
-        status:       p.status,
-        inventory:    n(p.inventories?.[0]?.product_quantity ?? 0),
-        price:        n(p.prices?.[0]?.selling_price ?? 0),
-        measurement_unit: p.measurement_units === 'pieces' ? 'pcs' : (p.measurement_units ?? 'pcs'),
-        packet_size:  n(p.packet_size ?? 0),
-        barcode:      p.barcode || p.product_code,
-        sku:          p.sku || "",
-        special_offers: (p.special_offers || []).map((o: any) => ({ offer_price: n(o.offer_price), start_date: o.start_date, end_date: o.end_date })),
-        tier_prices:  (p.tier_prices || []).map((t: any) => ({ quantity_above: n(t.quantity_above), tier_price: n(t.tier_price) })),
-        tax_rate:     n(p.tax?.tax_rate ?? 0),
-        tax_type:     p.tax?.tax_type ?? null,
-        tax_title:    p.tax?.tax_title ?? '',
-        attributes:   (p.attributes || []).map((a: any) => ({ attribute_name: a.attribute_name, attribute_value: a.attribute_value })),
-      }))
-      setProducts(fresh)
-      const res2 = fresh.filter(p =>
-        p.barcode.toLowerCase() === s ||
-        (p.sku && p.sku.toLowerCase() === s) ||
-        p.product_code.toLowerCase().includes(s) ||
-        p.product_name.toLowerCase().includes(s)
-      ).slice(0, 12)
-      setSearchResults(res2)
-      setHighlightedIdx(res2.length === 1 ? 0 : -1)
-    })
-  }, [searchTerm])
+    // Filter the already-loaded product list locally — no network call
+    // here. This used to re-fetch the entire product catalog from the
+    // server on every keystroke, which on a slow connection could take
+    // seconds, meaning a barcode scanner's near-instant Enter keypress
+    // would arrive before the search had actually finished and get
+    // silently dropped. Filtering in memory is effectively instant
+    // regardless of connection speed.
+    const res2 = products.filter(p =>
+      p.barcode.toLowerCase() === s ||
+      (p.sku && p.sku.toLowerCase() === s) ||
+      p.product_code.toLowerCase().includes(s) ||
+      p.product_name.toLowerCase().includes(s)
+    ).slice(0, 12)
+    setSearchResults(res2)
+    setHighlightedIdx(res2.length === 1 ? 0 : -1)
+  }, [searchTerm, products])
 
   // ── cart helpers ──────────────────────────────────────────────────────────
 

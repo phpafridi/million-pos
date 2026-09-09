@@ -106,8 +106,14 @@ export async function shareAllCustomers(): Promise<{ shared: number }> {
     throw new Error('Only Head Office can run this')
   }
 
+  // Exclude the generic per-shop "walkin" placeholder customers — every
+  // franchise has its own (customer_code = 900000000 + shop_id, seeded
+  // automatically). Sharing these would make every franchise's "walkin"
+  // show up in every other franchise's customer list as if they were
+  // the same person, which is meaningless — walkin isn't a real
+  // customer identity to share, it's a per-shop placeholder.
   const result = await prisma.tbl_customer.updateMany({
-    where: { shop_id: { not: null } },
+    where: { shop_id: { not: null }, customer_code: { lt: 900000000 } },
     data: { shop_id: null },
   })
 

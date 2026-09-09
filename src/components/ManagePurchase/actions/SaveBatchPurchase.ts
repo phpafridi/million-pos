@@ -13,6 +13,7 @@ export type BatchItem = {
   manufacture_date?: string
   batch_number?: string
   is_existing_batch?: boolean
+  damaged_qty?: number // arrived already damaged — goes to the damage log, not sellable stock/batch
 }
 
 export type BatchPurchasePayload = {
@@ -49,7 +50,7 @@ export async function SaveBatchPurchase(data: BatchPurchasePayload) {
     const productIds = data.cart.map(i => i.product_id)
     const productDetails = await prisma.tbl_product.findMany({
       where: { product_id: { in: productIds } },
-      select: { product_id: true, product_code: true, product_name: true },
+      select: { product_id: true, product_code: true, product_name: true, subcategory: { select: { category: { select: { category_name: true } } } } },
     })
     const productMap = new Map(productDetails.map(p => [p.product_id, p]))
 
@@ -88,10 +89,15 @@ export async function SaveBatchPurchase(data: BatchPurchasePayload) {
     for (const item of data.cart) {
       const product      = productMap.get(item.product_id)
       const qty          = Number(item.qty)
+      const damagedQty   = Math.min(Number(item.damaged_qty) || 0, qty) // can't damage more than what arrived
+      const sellableQty  = qty - damagedQty
       const buyingPrice  = Number(item.buying_price)
       const sellingPrice = Number(item.selling_price)
 
-      // Insert purchase product audit record
+      // Insert purchase product audit record — records the FULL quantity
+      // and what was actually paid, regardless of how much arrived
+      // damaged. What you paid the supplier for is a separate question
+      // from what's sellable; the damaged portion is tracked below.
       await prisma.$executeRaw`
         INSERT INTO tbl_purchase_product (
           purchase_id, product_id, product_code, product_name,
@@ -103,58 +109,82 @@ export async function SaveBatchPurchase(data: BatchPurchasePayload) {
         )
       `
 
-      // Batch: top-up existing or create new
-      if (item.is_existing_batch && item.batch_number) {
-        await prisma.$executeRaw`
-          UPDATE tbl_purchase_batch
-          SET
-            qty           = qty + ${qty},
-            qty_remaining = qty_remaining + ${qty},
-            buying_price  = ${buyingPrice},
-            selling_price = ${sellingPrice},
-            is_active     = true
-          WHERE product_id   = ${item.product_id}
-            AND shop_id      = ${shopId}
-            AND batch_number = ${item.batch_number}
-          LIMIT 1
-        `
-      } else {
-        const batchNumber = (item.batch_number && item.batch_number.trim())
-          ? item.batch_number.trim()
-          : `B${purchaseId}-${item.product_id}-${Date.now()}`
-        const expiryDate = item.expiry_date      ? new Date(item.expiry_date)      : null
-        const mfgDate    = item.manufacture_date  ? new Date(item.manufacture_date) : null
-
-        await prisma.$executeRaw`
-          INSERT INTO tbl_purchase_batch (
-            purchase_id, product_id, shop_id, product_code, product_name,
-            batch_number, qty, qty_remaining,
-            buying_price, selling_price,
-            expiry_date, manufacture_date, purchase_date, is_active
-          ) VALUES (
-            ${purchaseId}, ${item.product_id}, ${shopId},
-            ${product?.product_code || ''}, ${product?.product_name || ''},
-            ${batchNumber}, ${qty}, ${qty},
-            ${buyingPrice}, ${sellingPrice},
-            ${expiryDate}, ${mfgDate}, ${purchaseDate}, true
-          )
-        `
+      // Log the damaged portion, if any — before touching batch/inventory,
+      // so a damaged_qty equal to the full qty (100% arrived broken)
+      // correctly results in zero sellable stock and zero batch quantity.
+      if (damagedQty > 0) {
+        await prisma.tbl_damage_product.create({
+          data: {
+            product_id: item.product_id,
+            shop_id: shopId,
+            product_code: product?.product_code || '',
+            product_name: product?.product_name || '',
+            category: product?.subcategory?.category?.category_name || 'Unknown',
+            qty: damagedQty,
+            note: `Arrived damaged from supplier "${supplier.supplier_name}" — purchase ref ${data.purchase_ref || purchaseId}`,
+            decrease: 0, // never entered sellable inventory — nothing to deduct
+            date: purchaseDate.toISOString(),
+          },
+        })
       }
 
-      // Update or create inventory
-      const inv = invMap.get(item.product_id)
-      if (inv) {
-        const newQty = Number(inv.product_quantity) + qty
-        await prisma.$executeRaw`
-          UPDATE tbl_inventory
-          SET product_quantity = CAST(${newQty} AS DECIMAL(10,1))
-          WHERE inventory_id = ${inv.inventory_id}
-        `
-      } else {
-        await prisma.$executeRaw`
-          INSERT INTO tbl_inventory (product_id, shop_id, product_quantity, notify_quantity)
-          VALUES (${item.product_id}, ${shopId}, ${qty}, 0)
-        `
+      // Batch and inventory only ever see the sellable portion — a fully
+      // damaged item (sellableQty === 0) correctly creates no batch and
+      // adds nothing to stock.
+      if (sellableQty > 0) {
+        // Batch: top-up existing or create new
+        if (item.is_existing_batch && item.batch_number) {
+          await prisma.$executeRaw`
+            UPDATE tbl_purchase_batch
+            SET
+              qty           = qty + ${sellableQty},
+              qty_remaining = qty_remaining + ${sellableQty},
+              buying_price  = ${buyingPrice},
+              selling_price = ${sellingPrice},
+              is_active     = true
+            WHERE product_id   = ${item.product_id}
+              AND shop_id      = ${shopId}
+              AND batch_number = ${item.batch_number}
+            LIMIT 1
+          `
+        } else {
+          const batchNumber = (item.batch_number && item.batch_number.trim())
+            ? item.batch_number.trim()
+            : `B${purchaseId}-${item.product_id}-${Date.now()}`
+          const expiryDate = item.expiry_date      ? new Date(item.expiry_date)      : null
+          const mfgDate    = item.manufacture_date  ? new Date(item.manufacture_date) : null
+
+          await prisma.$executeRaw`
+            INSERT INTO tbl_purchase_batch (
+              purchase_id, product_id, shop_id, product_code, product_name,
+              batch_number, qty, qty_remaining,
+              buying_price, selling_price,
+              expiry_date, manufacture_date, purchase_date, is_active
+            ) VALUES (
+              ${purchaseId}, ${item.product_id}, ${shopId},
+              ${product?.product_code || ''}, ${product?.product_name || ''},
+              ${batchNumber}, ${sellableQty}, ${sellableQty},
+              ${buyingPrice}, ${sellingPrice},
+              ${expiryDate}, ${mfgDate}, ${purchaseDate}, true
+            )
+          `
+        }
+
+        // Update or create inventory
+        const inv = invMap.get(item.product_id)
+        if (inv) {
+          const newQty = Number(inv.product_quantity) + sellableQty
+          await prisma.$executeRaw`
+            UPDATE tbl_inventory
+            SET product_quantity = CAST(${newQty} AS DECIMAL(10,1))
+            WHERE inventory_id = ${inv.inventory_id}
+          `
+        } else {
+          await prisma.$executeRaw`
+            INSERT INTO tbl_inventory (product_id, shop_id, product_quantity, notify_quantity)
+            VALUES (${item.product_id}, ${shopId}, ${sellableQty}, 0)
+          `
+        }
       }
 
       // Update product default price

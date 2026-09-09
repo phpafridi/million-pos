@@ -40,6 +40,7 @@ type CartItem = {
   unitType: 'pcs' | 'packet'
   batch_number: string
   is_existing_batch: boolean  // true = adding stock to existing batch
+  damaged_qty: number // arrived already damaged, doesn't enter sellable stock
 }
 
 // ─── Shortcut Hints ───────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ export default function NewPurchase() {
   const { refreshLowStock, refreshExpiryAlerts } = useNotifications()
   const { data: session } = useSession()
   const isSuperAdmin = Boolean((session?.user as any)?.is_super_admin)
+  const isWarehouseShop = Boolean((session?.user as any)?.is_warehouse)
   const [shops, setShops] = useState<{ shop_id: number; shop_name: string; shop_code: string }[]>([])
   const [activeShopId, setActiveShopId] = useState<number | undefined>(undefined)
 
@@ -156,6 +158,7 @@ export default function NewPurchase() {
         expiry_date: '', manufacture_date: '', unitType,
         batch_number: batchNum || `BN-${product.product_code}-${new Date().toISOString().slice(0,10)}`,
         is_existing_batch: false,
+        damaged_qty: 0,
       }]
     })
     setSelectedCartRow(cart.length)
@@ -259,7 +262,7 @@ export default function NewPurchase() {
                 product: batchPickerProduct, qty: qtyToAdd,
                 buying_price: batch.buying_price, selling_price: batch.selling_price,
                 expiry_date: batch.expiry_date || '', manufacture_date: batch.manufacture_date || '',
-                unitType, batch_number: batch.batch_number, is_existing_batch: true,
+                unitType, batch_number: batch.batch_number, is_existing_batch: true, damaged_qty: 0,
               }]
             })
             setSelectedCartRow(cart.length)
@@ -348,6 +351,7 @@ export default function NewPurchase() {
         manufacture_date:  item.manufacture_date || undefined,
         batch_number:      item.batch_number     || undefined,
         is_existing_batch: item.is_existing_batch,
+        damaged_qty:       item.damaged_qty || 0,
       } as BatchItem)),
     })
     setLoading(false)
@@ -589,6 +593,23 @@ export default function NewPurchase() {
                           {item.product.attributes.map((a, ai) => `${a.attribute_name}: ${a.attribute_value}`).join(' · ')}
                         </div>
                       )}
+                      {isWarehouseShop && (
+                        <div
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <span style={{ color: '#d9403a', fontSize: 9 }}>Damaged on arrival:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={item.qty}
+                            step={1}
+                            value={item.damaged_qty || 0}
+                            onChange={e => updateCart(item.product.product_id, 'damaged_qty', Math.min(parseFloat(e.target.value) || 0, item.qty))}
+                            style={{ width: 44, fontSize: 9, padding: '1px 3px', border: '1px solid #f0b4b0', borderRadius: 3 }}
+                          />
+                        </div>
+                      )}
                     </span>
 
                     {/* Qty */}
@@ -598,7 +619,7 @@ export default function NewPurchase() {
                           type="number"
                           className="pur-num"
                           value={displayQty}
-                          min={0.1} step={0.1}
+                          min={0.1} step={1}
                           ref={el => { qtyRefs.current[item.product.product_id] = el }}
                           onFocus={() => setSelectedCartRow(idx)}
                           onClick={e => e.stopPropagation()}
@@ -933,6 +954,7 @@ export default function NewPurchase() {
                               manufacture_date: batch.manufacture_date || '',
                               unitType, batch_number: batch.batch_number,
                               is_existing_batch: true,
+                              damaged_qty: 0,
                             }]
                           })
                           setSelectedCartRow(cart.length)

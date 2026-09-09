@@ -12,19 +12,30 @@ export default function TailorCustomerList() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  const load = async (q?: string) => {
-    setLoading(true)
-    const data = await FetchTailorCustomerList(q)
-    setCustomers(data)
-    setLoading(false)
-  }
-
-  useEffect(() => { load() }, [])
-
   useEffect(() => {
-    const t = setTimeout(() => load(search || undefined), 300)
-    return () => clearTimeout(t)
-  }, [search])
+    setLoading(true)
+    FetchTailorCustomerList().then((data) => {
+      setCustomers(data)
+      setLoading(false)
+    })
+  }, [])
+
+  // Filtered locally, in memory — no network call per keystroke. On a
+  // slow connection, re-fetching from the server on every character
+  // typed made search feel unresponsive or even silently drop fast
+  // input (like a barcode/QR scan of a customer card). Filtering an
+  // already-loaded list is effectively instant regardless of connection
+  // speed.
+  const filteredCustomers = search.trim()
+    ? customers.filter((c) => {
+        const q = search.trim().toLowerCase()
+        return (
+          c.customer_name?.toLowerCase().includes(q) ||
+          c.phone?.toLowerCase().includes(q) ||
+          c.email?.toLowerCase().includes(q)
+        )
+      })
+    : customers
 
   return (
     <div className="right-side" style={{ minHeight: '945px' }}>
@@ -69,8 +80,8 @@ export default function TailorCustomerList() {
                 <tbody>
                   {loading ? (
                     <tr><td colSpan={6} className="text-center"><strong>Loading...</strong></td></tr>
-                  ) : customers.length > 0 ? (
-                    customers.map((c, i) => (
+                  ) : filteredCustomers.length > 0 ? (
+                    filteredCustomers.map((c, i) => (
                       <tr key={c.customer_id}>
                         <td>{i + 1}</td>
                         <td>

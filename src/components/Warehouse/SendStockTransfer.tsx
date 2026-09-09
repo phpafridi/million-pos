@@ -12,6 +12,7 @@ type CartLine = { product_id: number; product_name: string; available: number; q
 export default function SendStockTransfer() {
   const { data: session } = useSession()
   const isSuperAdmin = Boolean((session?.user as any)?.is_super_admin)
+  const isWarehouseShop = Boolean((session?.user as any)?.is_warehouse)
   const createdBy = session?.user?.name || session?.user?.email || 'Staff'
 
   const [shops, setShops] = useState<Shop[]>([])
@@ -24,8 +25,12 @@ export default function SendStockTransfer() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetch('/api/shops').then(r => r.json()).then(json => { if (json.success) setShops(json.data) })
-  }, [])
+    // A franchise sending a damage return can only ship it to a
+    // warehouse — a warehouse sending a normal restock can go to any
+    // franchise. Fetch the right list for whichever this account is.
+    const url = isWarehouseShop ? '/api/shops' : '/api/shops?type=warehouse'
+    fetch(url).then(r => r.json()).then(json => { if (json.success) setShops(json.data) })
+  }, [isWarehouseShop])
 
   useEffect(() => {
     FetchProducts(fromShopId).then((res: any) => {
@@ -70,13 +75,13 @@ export default function SendStockTransfer() {
   const total = cart.reduce((s, c) => s + (Number(c.quantity) || 0) * (Number(c.unit_price) || 0), 0)
 
   const handleSubmit = async () => {
-    if (!toShopId) { toast.error('Select a destination franchise'); return }
+    if (!toShopId) { toast.error(isWarehouseShop ? 'Select a destination franchise' : 'Select a warehouse'); return }
     if (cart.length === 0) { toast.error('Add at least one product'); return }
 
     const items: TransferItemInput[] = cart.map(c => ({
       product_id: c.product_id,
       quantity: Number(c.quantity),
-      unit_price: Number(c.unit_price),
+      unit_price: isWarehouseShop ? Number(c.unit_price) : 0,
     }))
 
     setSaving(true)
@@ -87,6 +92,7 @@ export default function SendStockTransfer() {
         notes,
         created_by: createdBy,
         from_shop_id_override: fromShopId,
+        transfer_type: isWarehouseShop ? 'restock' : 'damage_return',
       })
       toast.success(`Transfer ${transfer.transfer_number} sent!`)
       setCart([])
@@ -103,7 +109,7 @@ export default function SendStockTransfer() {
     <div className="right-side" style={{ minHeight: '945px' }}>
       <section className="content-header text-center">
         <ol className="breadcrumb">
-          <li><a href="#">Send Stock Transfer</a></li>
+          <li><a href="#">{isWarehouseShop ? 'Send Stock Transfer' : 'Send Damage Return'}</a></li>
           <li><a href="#">Warehouse</a></li>
         </ol>
       </section>
@@ -115,7 +121,7 @@ export default function SendStockTransfer() {
             <div className="col-md-8 col-md-offset-2">
               <div className="box box-primary">
                 <div className="box-header box-header-background with-border">
-                  <h3 className="box-title">New Transfer</h3>
+                  <h3 className="box-title">{isWarehouseShop ? 'New Transfer' : 'New Damage Return'}</h3>
                 </div>
                 <div className="box-background" style={{ padding: 20 }}>
 
@@ -132,9 +138,9 @@ export default function SendStockTransfer() {
                   )}
 
                   <div className="form-group">
-                    <label>Send To <span className="required">*</span></label>
+                    <label>{isWarehouseShop ? 'Send To' : 'Send To Warehouse'} <span className="required">*</span></label>
                     <select className="form-control" value={toShopId} onChange={(e) => setToShopId(e.target.value)}>
-                      <option value="">Select destination franchise…</option>
+                      <option value="">{isWarehouseShop ? 'Select destination franchise…' : 'Select warehouse…'}</option>
                       {shops.filter(s => s.shop_id !== fromShopId).map(s => (
                         <option key={s.shop_id} value={s.shop_id}>{s.shop_name} ({s.shop_code})</option>
                       ))}
@@ -167,27 +173,29 @@ export default function SendStockTransfer() {
                         <th>Product</th>
                         <th style={{ width: 100 }}>Available</th>
                         <th style={{ width: 110 }}>Qty</th>
-                        <th style={{ width: 130 }}>Unit Price</th>
-                        <th style={{ width: 100 }}>Subtotal</th>
+                        {isWarehouseShop && <th style={{ width: 130 }}>Unit Price</th>}
+                        {isWarehouseShop && <th style={{ width: 100 }}>Subtotal</th>}
                         <th style={{ width: 40 }}></th>
                       </tr>
                     </thead>
                     <tbody>
                       {cart.length === 0 ? (
-                        <tr><td colSpan={6} className="text-center text-muted">No products added yet</td></tr>
+                        <tr><td colSpan={isWarehouseShop ? 6 : 4} className="text-center text-muted">No products added yet</td></tr>
                       ) : cart.map(c => (
                         <tr key={c.product_id}>
                           <td>{c.product_name}</td>
                           <td>{c.available}</td>
                           <td>
-                            <input type="number" min={0.1} step={0.1} className="form-control input-sm" value={c.quantity}
+                            <input type="number" min={1} step={1} className="form-control input-sm" value={c.quantity}
                               onChange={(e) => updateLine(c.product_id, 'quantity', e.target.value)} />
                           </td>
-                          <td>
-                            <input type="number" min={0} step={0.01} className="form-control input-sm" value={c.unit_price}
-                              onChange={(e) => updateLine(c.product_id, 'unit_price', e.target.value)} />
-                          </td>
-                          <td>{((Number(c.quantity) || 0) * (Number(c.unit_price) || 0)).toFixed(2)}</td>
+                          {isWarehouseShop && (
+                            <td>
+                              <input type="number" min={0} step={0.01} className="form-control input-sm" value={c.unit_price}
+                                onChange={(e) => updateLine(c.product_id, 'unit_price', e.target.value)} />
+                            </td>
+                          )}
+                          {isWarehouseShop && <td>{((Number(c.quantity) || 0) * (Number(c.unit_price) || 0)).toFixed(2)}</td>}
                           <td>
                             <button className="btn btn-danger btn-xs" onClick={() => removeLine(c.product_id)}>
                               <i className="fa fa-trash"></i>
@@ -198,9 +206,11 @@ export default function SendStockTransfer() {
                     </tbody>
                   </table>
 
-                  <div className="text-right" style={{ marginBottom: 16, fontSize: 16 }}>
-                    <strong>Total: {total.toFixed(2)}</strong>
-                  </div>
+                  {isWarehouseShop && (
+                    <div className="text-right" style={{ marginBottom: 16, fontSize: 16 }}>
+                      <strong>Total: {total.toFixed(2)}</strong>
+                    </div>
+                  )}
 
                   <div className="form-group">
                     <label>Notes</label>
@@ -208,7 +218,7 @@ export default function SendStockTransfer() {
                   </div>
 
                   <button className="btn bg-navy btn-flat btn-block" onClick={handleSubmit} disabled={saving}>
-                    {saving ? 'Sending...' : 'Send Transfer'}
+                    {saving ? 'Sending...' : (isWarehouseShop ? 'Send Transfer' : 'Send Damage Return')}
                   </button>
                 </div>
               </div>

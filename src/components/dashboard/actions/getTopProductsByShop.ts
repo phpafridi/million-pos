@@ -21,10 +21,16 @@ export async function getTopProductsByShop(): Promise<{ rows: ProductByShopRow[]
   const shopNames = shops.map(s => s.shop_name)
   const shopIdToName = new Map(shops.map(s => [s.shop_id, s.shop_name]))
 
-  // Find the network-wide top 5 products by quantity sold
+  // Find the network-wide top 5 products by quantity sold.
+  // order_status 2 = confirmed, 4 = exchanged (still counts — the item
+  // stayed sold, just swapped). 3 = refunded is excluded, same rule
+  // used everywhere else revenue/sales get calculated — an order that
+  // was refunded shouldn't count toward "top selling" either.
   const topGroups = await prisma.tbl_order_details.groupBy({
     by: ['product_id'],
-    where: allShops ? {} : { order: { shop_id: scope.shopId ?? -1 } },
+    where: allShops
+      ? { order: { order_status: { in: [2, 4] } } }
+      : { order: { shop_id: scope.shopId ?? -1, order_status: { in: [2, 4] } } },
     _sum: { product_quantity: true },
     orderBy: { _sum: { product_quantity: 'desc' } },
     take: 5,
@@ -40,7 +46,12 @@ export async function getTopProductsByShop(): Promise<{ rows: ProductByShopRow[]
 
   // Now get the per-shop breakdown for just these products
   const details = await prisma.tbl_order_details.findMany({
-    where: { product_id: { in: productIds }, ...(allShops ? {} : { order: { shop_id: scope.shopId ?? -1 } }) },
+    where: {
+      product_id: { in: productIds },
+      order: allShops
+        ? { order_status: { in: [2, 4] } }
+        : { shop_id: scope.shopId ?? -1, order_status: { in: [2, 4] } },
+    },
     select: { product_id: true, product_quantity: true, order: { select: { shop_id: true } } },
   })
 

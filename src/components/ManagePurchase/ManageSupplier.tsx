@@ -81,6 +81,23 @@ export default function ManageSupplier() {
       <br />
       <div className="container-fluid">
         <section className="content">
+          {!loading && (
+            <div className="row">
+              <div className="col-md-6">
+                <div className="small-box bg-aqua">
+                  <div className="inner"><h3>{suppliers.length}</h3><p>Total Suppliers</p></div>
+                  <div className="icon"><i className="fa fa-truck"></i></div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="small-box bg-purple">
+                  <div className="inner"><h3>{new Set(suppliers.map(s => s.company_name)).size}</h3><p>Distinct Companies</p></div>
+                  <div className="icon"><i className="fa fa-building"></i></div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="row">
             <div className="col-md-12">
               <div className="box box-primary">

@@ -18,9 +18,22 @@ export async function CreateStockTransfer(data: {
   notes?: string
   created_by: string
   from_shop_id_override?: number // only honored for super admins (shop-switcher)
+  transfer_type?: 'restock' | 'damage_return'
 }) {
   const scope = await getShopScope()
-  if (!scope.isWarehouse) {
+  const transferType = data.transfer_type || 'restock'
+
+  const destShop = await prisma.tbl_shop.findUnique({ where: { shop_id: data.to_shop_id } })
+  if (!destShop) throw new Error('Destination shop not found')
+
+  if (transferType === 'damage_return') {
+    // A franchise shipping damaged goods back must be sending TO an
+    // actual warehouse — this is the one case a non-warehouse shop is
+    // allowed to initiate a transfer.
+    if (!destShop.is_warehouse) {
+      throw new Error('Damage returns can only be sent to a warehouse')
+    }
+  } else if (!scope.isWarehouse) {
     throw new Error('Only a warehouse-flagged shop can send stock transfers — Head Office is reports-only')
   }
   const fromShopId = data.from_shop_id_override ?? scopeShopIdForWrite(scope)
@@ -31,9 +44,6 @@ export async function CreateStockTransfer(data: {
   if (!data.items || data.items.length === 0) {
     throw new Error('Add at least one product to the transfer')
   }
-
-  const destShop = await prisma.tbl_shop.findUnique({ where: { shop_id: data.to_shop_id } })
-  if (!destShop) throw new Error('Destination franchise not found')
 
   // Confirm the sending shop has enough stock of every item
   const productIds = data.items.map(i => i.product_id)
@@ -63,9 +73,17 @@ export async function CreateStockTransfer(data: {
     select: { transfer_number: true },
   })
   const lastNum = last ? parseInt(last.transfer_number.replace(/\D/g, ''), 10) || 0 : 0
-  const transfer_number = `MLNP-${String(lastNum + 1).padStart(4, '0')}`
+  const transfer_number = transferType === 'damage_return'
+    ? `MLNP-DMG-${String(lastNum + 1).padStart(4, '0')}`
+    : `MLNP-${String(lastNum + 1).padStart(4, '0')}`
 
-  const total_amount = data.items.reduce((s, i) => s + i.quantity * i.unit_price, 0)
+  // Damage returns never bill the sender — force zero regardless of
+  // whatever unit_price the form happened to submit.
+  const effectiveItems = transferType === 'damage_return'
+    ? data.items.map(i => ({ ...i, unit_price: 0 }))
+    : data.items
+
+  const total_amount = effectiveItems.reduce((s, i) => s + i.quantity * i.unit_price, 0)
 
   const transfer = await prisma.$transaction(async (tx) => {
     const created = await tx.tbl_stock_transfer.create({
@@ -73,12 +91,13 @@ export async function CreateStockTransfer(data: {
         transfer_number,
         from_shop_id: fromShopId,
         to_shop_id: data.to_shop_id,
+        transfer_type: transferType,
         status: 'pending',
         total_amount,
         notes: data.notes || null,
         created_by: data.created_by,
         items: {
-          create: data.items.map(i => ({
+          create: effectiveItems.map(i => ({
             product_id: i.product_id,
             product_name: productMap.get(i.product_id)?.product_name || 'Unknown',
             quantity: i.quantity,
@@ -357,4 +376,78 @@ export async function FetchFranchiseBalances() {
       net: owedToThisShop - owedByThisShop,
     }
   })
+}
+
+// ── Damage return receipt ───────────────────────────────────────────────
+// Called by the warehouse once a damage_return transfer has physically
+// arrived — logs every item into the warehouse's own damage record
+// (tbl_damage_product) rather than adding it to sellable inventory,
+// since these units are damaged goods coming back from a franchise, not
+// stock to resell. Distinct from ReceiveStockTransfer (which just marks
+// delivery for billing) — this is the warehouse's own follow-up action
+// once they've actually inspected what arrived.
+export async function LogDamageReturnReceipt(transfer_id: number, loggedBy: string) {
+  const scope = await getShopScope()
+  if (!scope.isWarehouse) {
+    throw new Error('Only a warehouse-flagged shop can log a damage return receipt')
+  }
+
+  const transfer = await prisma.tbl_stock_transfer.findUnique({
+    where: { transfer_id },
+    include: { items: true },
+  })
+  if (!transfer) throw new Error('Transfer not found')
+  if (transfer.transfer_type !== 'damage_return') {
+    throw new Error('This is not a damage return transfer')
+  }
+  if (!scope.isSuperAdmin && transfer.to_shop_id !== scope.shopId) {
+    throw new Error('Only the receiving warehouse can log this')
+  }
+  if (transfer.status !== 'received') {
+    throw new Error('Mark this transfer as delivered before logging the damage receipt')
+  }
+  if (transfer.damage_logged) {
+    throw new Error('This damage return has already been logged')
+  }
+
+  const productIds = transfer.items.map((i) => i.product_id)
+  const products = await prisma.tbl_product.findMany({
+    where: { product_id: { in: productIds } },
+    include: { subcategory: { include: { category: true } } },
+  })
+  const productMap = new Map(products.map((p) => [p.product_id, p]))
+
+  const created = await prisma.$transaction(
+    transfer.items.map((item) => {
+      const product = productMap.get(item.product_id)
+      return prisma.tbl_damage_product.create({
+        data: {
+          product_id: item.product_id,
+          shop_id: transfer.to_shop_id,
+          product_code: product?.product_code || '',
+          product_name: item.product_name,
+          category: product?.subcategory?.category?.category_name || 'Unknown',
+          qty: item.quantity,
+          note: `Damage return from franchise via transfer ${transfer.transfer_number}`,
+          decrease: 0, // never was in sellable inventory here — nothing to deduct
+          date: new Date().toISOString(),
+        },
+      })
+    })
+  )
+
+  await prisma.tbl_stock_transfer.update({
+    where: { transfer_id },
+    data: { damage_logged: true },
+  })
+
+  await logActivity({
+    action: 'damage.record',
+    entityType: 'stock_transfer',
+    entityId: transfer_id,
+    description: `Logged damage return receipt for transfer ${transfer.transfer_number} — ${transfer.items.length} product(s) recorded as damaged by ${loggedBy}`,
+    shopIdOverride: transfer.to_shop_id,
+  })
+
+  return { success: true, count: created.length }
 }

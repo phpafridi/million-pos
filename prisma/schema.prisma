@@ -899,6 +899,13 @@ model tbl_stock_transfer {
   // pending (created, stock already deducted from sender) → received
   // (destination confirmed receipt, stock added to their inventory)
   // → cancelled (sender voided before receipt; stock restored to sender)
+  // 'restock' = normal stock movement, destination owes sender money.
+  // 'damage_return' = franchise shipping damaged goods back to a
+  // warehouse — no payment involved, and on receipt these units go into
+  // the warehouse's damage log instead of sellable inventory.
+  transfer_type   String   @default("restock") @db.VarChar(20)
+  damage_logged   Boolean  @default(false) // true once LogDamageReturnReceipt has run — prevents double-logging the same items
+
   status          String   @default("pending") @db.VarChar(20)
 
   total_amount    Decimal  @default(0) @db.Decimal(10,2) // what the destination owes the sender

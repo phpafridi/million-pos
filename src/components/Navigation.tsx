@@ -149,7 +149,6 @@ export default function Navigation() {
   // exclusively Head Office itself.
   const WAREHOUSE_SHOP_MENUS = new Set<string>([
     '/dashboard/warehouse/add-stock',
-    '/dashboard/warehouse/send-transfer',
     '/dashboard/warehouse/transfers',
     'Warehouse',
   ]);
@@ -162,6 +161,7 @@ export default function Navigation() {
   // role checkboxes — so "warehouse has no purchase/product access"
   // can't happen just because an admin forgot to check every box.
   const WAREHOUSE_GUARANTEED_MENUS = new Set<string>([
+    '/dashboard/warehouse/send-transfer',
     'Manage Purchase', 'Supplier', 'Purchase',
     '/dashboard/manage-purchase/supplier/add-supplier',
     '/dashboard/manage-purchase/supplier/manage-supplier',
@@ -245,7 +245,7 @@ export default function Navigation() {
             <NavLink href="/dashboard/warehouse/add-stock" icon={<i className="fa fa-plus-square"></i>} label="Add Stock" />
           )}
           {hasRole('/dashboard/warehouse/send-transfer') && (
-            <NavLink href="/dashboard/warehouse/send-transfer" icon={<i className="fa fa-paper-plane"></i>} label="Send Stock Transfer" />
+            <NavLink href="/dashboard/warehouse/send-transfer" icon={<i className="fa fa-paper-plane"></i>} label={isWarehouseShop ? "Send Stock Transfer" : "Send Damage Return"} />
           )}
           {hasRole('/dashboard/warehouse/transfers') && (
             <NavLink href="/dashboard/warehouse/transfers" icon={<i className="glyphicon glyphicon-th-list"></i>} label="Manage Transfers" />

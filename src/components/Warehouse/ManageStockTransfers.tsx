@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 import {
-  FetchTransfers, FetchTransferById, ReceiveStockTransfer, CancelStockTransfer, RecordTransferPayment,
+  FetchTransfers, FetchTransferById, ReceiveStockTransfer, CancelStockTransfer, RecordTransferPayment, LogDamageReturnReceipt,
 } from './actions/StockTransferActions'
 import TransferInvoice from './TransferInvoice'
 import { hasPermission } from '@/lib/clientPermissions'
@@ -17,6 +17,7 @@ const STATUS_BADGE: Record<string, string> = {
 export default function ManageStockTransfers() {
   const { data: session } = useSession()
   const actingUser = session?.user?.name || session?.user?.email || 'Staff'
+  const isWarehouseShop = Boolean((session?.user as any)?.is_warehouse)
   const canView = hasPermission(session, 'action:view-transfer', 'view')
   const canManageStatus = hasPermission(session, 'action:manage-transfer-status')
   const canRecordPayment = hasPermission(session, 'action:record-transfer-payment')
@@ -58,6 +59,21 @@ export default function ManageStockTransfers() {
       load()
     } catch (err: any) {
       toast.error(err.message || 'Failed to receive transfer')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleLogDamage = async (id: number) => {
+    if (!confirm('Log these items as damaged stock received? This records them in your damage report — only do this after actually inspecting what arrived.')) return
+    setBusy(true)
+    try {
+      await LogDamageReturnReceipt(id, actingUser)
+      toast.success('Damage receipt logged')
+      setActiveTransfer(null)
+      load()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to log damage receipt')
     } finally {
       setBusy(false)
     }
@@ -249,6 +265,11 @@ export default function ManageStockTransfers() {
                     <button className="btn btn-danger" onClick={() => handleCancel(activeTransfer.transfer_id)} disabled={busy}>Cancel Transfer</button>
                     <button className="btn btn-success" onClick={() => handleReceive(activeTransfer.transfer_id)} disabled={busy}>Mark as Delivered</button>
                   </>
+                )}
+                {activeTransfer.status === 'received' && activeTransfer.transfer_type === 'damage_return' && isWarehouseShop && !activeTransfer.damage_logged && (
+                  <button className="btn btn-warning" onClick={() => handleLogDamage(activeTransfer.transfer_id)} disabled={busy}>
+                    <i className="fa fa-exclamation-triangle"></i> Log Damage Receipt
+                  </button>
                 )}
                 <button className="btn btn-default" onClick={() => setShowInvoice(true)}>Print Invoice</button>
                 <button className="btn btn-default" onClick={() => setActiveTransfer(null)}>Close</button>

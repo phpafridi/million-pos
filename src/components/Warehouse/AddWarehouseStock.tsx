@@ -158,7 +158,7 @@ export default function AddWarehouseStock() {
 
                   <div className="form-group">
                     <label>Quantity <span className="required">*</span></label>
-                    <input type="number" min="0.1" step="0.1" className="form-control" value={quantity}
+                    <input type="number" min="1" step="1" className="form-control" value={quantity}
                       onChange={(e) => setQuantity(e.target.value)} />
                   </div>
 

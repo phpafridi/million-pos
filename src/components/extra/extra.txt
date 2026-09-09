@@ -1,0 +1,16 @@
+                                                        <form
+                                                            action={DeleteSupplier.bind(null, s.supplier_id)}
+                                                            style={{ display: 'inline' }}
+                                                        >
+                                                            <button
+                                                                type="submit"
+                                                                className="btn btn-xs btn-danger"
+                                                                onClick={(e) => {
+                                                                    if (!confirm(`Delete ${s.supplier_name}?`)) {
+                                                                        e.preventDefault()
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <i className="glyphicon glyphicon-trash"></i>
+                                                            </button>
+                                                        </form>

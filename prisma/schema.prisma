@@ -1,0 +1,1037 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+
+// ---------------------------
+// Shops / Franchises
+// ---------------------------
+model tbl_shop {
+  shop_id       Int      @id @default(autoincrement())
+  shop_code     String   @unique @db.VarChar(30)
+  shop_name     String   @db.VarChar(150)
+  login_slug    String?  @unique @db.VarChar(50) // URL-safe id for this shop's own login page, e.g. /login/bara
+  address       String?  @db.Text
+  phone         String?  @db.VarChar(50)
+  email         String?  @db.VarChar(100)
+  is_head_office Boolean @default(false)
+  is_warehouse  Boolean  @default(false) // can send stock transfers to other shops, independent of Head Office
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now()) @db.Timestamp(0)
+  updated_at    DateTime @updatedAt @db.Timestamp(0)
+
+  users             User[]
+  inventories       tbl_inventory[]
+  prices            tbl_product_price[]
+  purchases         tbl_purchase[]
+  orders            tbl_order[]
+  returns           tbl_return[]
+  damages           tbl_damage_product[]
+  ledgers           tbl_ledger[]
+  suppliers         tbl_supplier[]
+  customers         tbl_customer[]
+  business_profiles tbl_business_profile[]
+  printer_settings  tbl_printer_setting[]
+  special_offers    tbl_special_offer[]
+  tier_prices       tbl_tier_price[]
+  purchase_batches  tbl_purchase_batch[]
+  activity_logs     tbl_activity_log[]
+  tailor_orders     tbl_tailor_order[]
+  transfers_sent     tbl_stock_transfer[] @relation("TransferFrom")
+  transfers_received tbl_stock_transfer[] @relation("TransferTo")
+
+  @@map("tbl_shop")
+}
+
+// ---------------------------
+// Ledger
+// ---------------------------
+model tbl_ledger {
+  ledger_id       Int      @id @default(autoincrement())
+  shop_id         Int      @default(1)
+  ledger_name     String   @db.VarChar(100)
+  mobile_number   String   @db.VarChar(20)
+  email           String?  @db.VarChar(100)
+  address         String?  @db.Text
+  total_balance   Decimal  @default(0) @db.Decimal(15,2)
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  updated_at      DateTime @updatedAt @db.Timestamp(0)
+
+  shop         tbl_shop                 @relation(fields: [shop_id], references: [shop_id])
+  transactions tbl_ledger_transaction[]
+
+  @@unique([shop_id, mobile_number])
+  @@index([shop_id])
+  @@map("tbl_ledger")
+}
+
+model tbl_ledger_transaction {
+  transaction_id     Int      @id @default(autoincrement())
+  ledger_id          Int
+  transaction_type   String   @db.VarChar(20) // 'karz_leya' or 'karz_deya'
+  amount             Decimal  @db.Decimal(15,2)
+  description        String?  @db.Text
+  previous_balance   Decimal  @db.Decimal(15,2)
+  new_balance        Decimal  @db.Decimal(15,2)
+  reference_number   String?  @db.VarChar(100)
+  transaction_date   DateTime @default(now()) @db.Timestamp(0)
+  created_by         String   @db.VarChar(100)
+
+  ledger tbl_ledger @relation(fields: [ledger_id], references: [ledger_id])
+
+  @@map("tbl_ledger_transaction")
+}
+
+// ---------------------------
+// Countries
+// ---------------------------
+model countries {
+  idCountry   Int    @id @default(autoincrement())
+  countryCode String @default("") @db.Char(2)
+  countryName String @default("") @db.VarChar(45)
+
+  @@map("countries")
+}
+
+// ---------------------------
+// Attributes
+// ---------------------------
+model tbl_attribute {
+  attribute_id    Int    @id @default(autoincrement())
+  product_id      Int
+  attribute_name  String @db.VarChar(100)
+  attribute_value String @db.Text
+
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+
+  @@map("tbl_attribute")
+}
+
+model tbl_attribute_set {
+  attribute_set_id Int    @id @default(autoincrement())
+  attribute_name   String @db.VarChar(100)
+
+  @@map("tbl_attribute_set")
+}
+
+// ---------------------------
+// Measurement Units (admin-managed)
+// ---------------------------
+model tbl_measurement_unit {
+  unit_id         Int      @id @default(autoincrement())
+  shop_id         Int?     // NULL = shared with every franchise; a value = private to that shop only (controlled by Head Office's Sync Settings)
+  unit_code       String   @db.VarChar(50)   // used as the stored value on tbl_product.measurement_units
+  unit_label      String   @db.VarChar(100)           // shown in dropdowns, e.g. "Meter", "Pieces"
+  is_packet_based Boolean  @default(false)             // true = triggers "pieces per packet" logic (replaces old hardcoded 'pieces' check)
+  sort_order      Int      @default(0)
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  updated_at      DateTime @updatedAt @db.Timestamp(0)
+
+  @@unique([shop_id, unit_code])
+  @@map("tbl_measurement_unit")
+}
+
+// ---------------------------
+// Business Profile
+// ---------------------------
+model tbl_business_profile {
+  business_profile_id Int     @id @default(autoincrement())
+  shop_id             Int     @default(1)
+  company_name        String  @db.VarChar(100)
+  logo                String? @db.VarChar(150)
+  favicon             String? @db.VarChar(150)
+  full_path           String? @db.VarChar(150)
+  email               String  @db.VarChar(100)
+  address             String  @db.Text
+  phone               String  @db.VarChar(100)
+  currency            String  @db.VarChar(100)
+
+  shop tbl_shop @relation(fields: [shop_id], references: [shop_id])
+
+  @@index([shop_id])
+  @@map("tbl_business_profile")
+}
+
+// ---------------------------
+// Campaigns
+// ---------------------------
+model tbl_campaign {
+  campaign_id   Int      @id @default(autoincrement())
+  campaign_name String   @db.VarChar(128)
+  subject       String   @db.VarChar(128)
+  email_body    String   @db.Text
+  date          DateTime @default(now()) @db.Timestamp(0)
+  created_by    String   @db.VarChar(128)
+
+  results tbl_campaign_result[]
+
+  @@map("tbl_campaign")
+}
+
+model tbl_campaign_result {
+  campaign_result_id Int      @id @default(autoincrement())
+  campaign_id        Int
+  campaign_name      String   @db.VarChar(128)
+  subject            String   @db.VarChar(128)
+  date               DateTime @default(now()) @db.Timestamp(0)
+  send_by            String   @db.VarChar(128)
+
+  campaign tbl_campaign @relation(fields: [campaign_id], references: [campaign_id])
+
+  @@map("tbl_campaign_result")
+}
+
+// ---------------------------
+// Category & Subcategory
+// ---------------------------
+model tbl_category {
+  category_id      Int      @id @default(autoincrement())
+  shop_id          Int?     // NULL = shared with every franchise; a value = private to that shop only
+  category_name    String   @db.VarChar(100)
+  created_datetime DateTime @default(now()) @db.Timestamp(0)
+
+  subcategories tbl_subcategory[]
+
+  @@map("tbl_category")
+}
+
+model tbl_subcategory {
+  subcategory_id   Int      @id @default(autoincrement())
+  category_id      Int
+  shop_id          Int?     // NULL = shared with every franchise; a value = private to that shop only
+  subcategory_name String   @db.VarChar(100)
+  created_datetime DateTime @default(now()) @db.Timestamp(0)
+
+  category tbl_category  @relation(fields: [category_id], references: [category_id])
+  products tbl_product[]
+
+  @@map("tbl_subcategory")
+}
+
+// ---------------------------
+// Customer
+// ---------------------------
+model tbl_customer {
+  customer_id   Int    @id @default(autoincrement())
+  shop_id       Int?   // NULL = shared with every franchise; a value = private to that shop only (controlled by Head Office's Sync Settings)
+  customer_code Int    @unique
+  customer_name String @db.VarChar(100)
+  email         String @db.VarChar(100)
+  phone         String @db.VarChar(100)
+  address       String @db.Text
+  discount      String @db.VarChar(100)
+
+  // Loyalty (gold card / points redemption — foundation for now, UI comes later)
+  is_gold_member Boolean @default(false)
+  loyalty_points  Int     @default(0)
+
+  // Tailor measurements — one customer, one set of measurements, shared
+  // across every tailor order they place (was previously a separate
+  // tbl_tailor_customer table; unified here so a customer is a single
+  // record across the whole business, not siloed per module).
+  measurement_length        Decimal? @db.Decimal(5,2)
+  measurement_teera          Decimal? @db.Decimal(5,2)
+  measurement_chest          Decimal? @db.Decimal(5,2)
+  measurement_waist          Decimal? @db.Decimal(5,2)
+  measurement_hip            Decimal? @db.Decimal(5,2)
+  measurement_shoulder       Decimal? @db.Decimal(5,2)
+  measurement_sleeve_length  Decimal? @db.Decimal(5,2)
+  measurement_sleeve_round   Decimal? @db.Decimal(5,2)
+  measurement_neck           Decimal? @db.Decimal(5,2)
+  measurement_daman          Decimal? @db.Decimal(5,2)
+  measurement_shalwar_length Decimal? @db.Decimal(5,2)
+  measurement_bottom         Decimal? @db.Decimal(5,2)
+  measurement_notes          String?  @db.Text
+  custom_measurements        Json?    // admin-added measurement fields beyond the fixed 12 above — { field_key: value }
+
+  shop   tbl_shop?   @relation(fields: [shop_id], references: [shop_id])
+  orders tbl_order[]
+  tailor_orders tbl_tailor_order[]
+
+  @@unique([shop_id, email])
+  @@index([shop_id])
+  @@map("tbl_customer")
+}
+
+// ---------------------------
+// Damage Product
+// ---------------------------
+model tbl_damage_product {
+  damage_product_id Int      @id @default(autoincrement())
+  shop_id           Int      @default(1)
+  product_id        Int
+  product_code      String   @db.VarChar(100)
+  product_name      String   @db.VarChar(127)
+  category          String   @db.VarChar(128)
+  qty               Decimal  @db.Decimal(10,1)  // CHANGED: (10,2) → (10,1)
+  note              String   @db.Text
+  decrease          Decimal  @default(0) @db.Decimal(10,1)  // CHANGED: (10,2) → (10,1)
+  date              String   @db.VarChar(100)
+
+  shop    tbl_shop    @relation(fields: [shop_id], references: [shop_id])
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+
+  @@index([shop_id])
+  @@map("tbl_damage_product")
+}
+
+// ---------------------------
+// Inventory
+// ---------------------------
+model tbl_inventory {
+  inventory_id     Int      @id @default(autoincrement())
+  product_id       Int
+  shop_id          Int      @default(1)
+  product_quantity Decimal  @db.Decimal(10,1)  // CHANGED: (10,2) → (10,1)
+  notify_quantity  Decimal? @db.Decimal(10,1)  // CHANGED: (10,2) → (10,1)
+
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+  shop    tbl_shop    @relation(fields: [shop_id], references: [shop_id])
+
+  @@unique([product_id, shop_id])
+  @@map("tbl_inventory")
+}
+
+// ---------------------------
+// Invoice
+// ---------------------------
+model tbl_invoice {
+  invoice_id   Int      @id @default(autoincrement())
+  invoice_no   Int?
+  invoice_number String? @unique @db.VarChar(30) // e.g. "BARA01-INV-0001"
+  order_id     Int
+  invoice_date DateTime @default(now()) @db.Timestamp(0)
+
+  order tbl_order @relation(fields: [order_id], references: [order_id])
+
+  @@map("tbl_invoice")
+}
+
+// ---------------------------
+// Localization
+// ---------------------------
+model tbl_localization {
+  localization_id Int    @id @unique(map: "localization_id") @default(autoincrement())
+  currency        String @db.VarChar(50)
+
+  @@map("tbl_localization")
+}
+
+// ---------------------------
+// Menu
+// ---------------------------
+model tbl_menu {
+  menu_id Int    @id @default(autoincrement())
+  label   String @db.VarChar(100)
+  link    String @db.VarChar(100)
+  icon    String @db.VarChar(100)
+  parent  Int
+  sort    Int
+
+  @@map("tbl_menu")
+}
+
+// ---------------------------
+// Orders & Order Details
+// ---------------------------
+model tbl_order {
+  order_id         Int      @id @default(autoincrement())
+  shop_id          Int      @default(1)
+  order_no         Int
+  order_number     String?  @unique @db.VarChar(30) // e.g. "BARA01-ORD-0001" — franchise code + sequence, replaces the raw timestamp for display
+  order_date       DateTime @default(now()) @db.Timestamp(0)
+  customer_id      Int
+  customer_name    String   @db.VarChar(128)
+  customer_email   String   @db.VarChar(100)
+  customer_phone   String   @db.VarChar(100)
+  customer_address String   @db.Text
+  shipping_address String   @db.Text
+  sub_total        Decimal  @db.Decimal(10,2)
+  discount         Decimal  @db.Decimal(10,2)
+  discount_amount  Decimal  @db.Decimal(10,2)
+  total_tax        Decimal  @db.Decimal(10,2)
+  grand_total      Decimal  @db.Decimal(10,2)
+  payment_method   String   @db.VarChar(100)
+  payment_ref      String   @db.VarChar(120)
+  order_status     Int      @default(0)
+  note             String   @db.Text
+  sales_person     String   @db.VarChar(100)
+
+  shop     tbl_shop            @relation(fields: [shop_id], references: [shop_id])
+  customer tbl_customer        @relation(fields: [customer_id], references: [customer_id])
+  details  tbl_order_details[]
+  invoices tbl_invoice[]
+  returns  tbl_return[]
+
+  @@index([shop_id])
+  @@map("tbl_order")
+}
+
+model tbl_order_details {
+  order_details_id Int      @id @default(autoincrement())
+  product_id       Int
+  order_id         Int
+  product_code     String   @db.VarChar(200)
+  product_name     String   @db.VarChar(128)
+  product_quantity Decimal  @db.Decimal(10,1)  // CHANGED: (10,2) → (10,1)
+  buying_price     Decimal  @db.Decimal(10,2)
+  selling_price    Decimal  @db.Decimal(10,2)
+  product_tax      Decimal  @db.Decimal(10,2)
+  sub_total        Decimal  @db.Decimal(10,2)
+  price_option     String   @db.VarChar(100)
+
+  order   tbl_order   @relation(fields: [order_id], references: [order_id])
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+
+  @@map("tbl_order_details")
+}
+
+// ---------------------------
+// Product & Related Tables
+// ---------------------------
+model tbl_product {
+  product_id        Int       @id @default(autoincrement())
+  shop_id           Int?      // NULL = shared with every franchise (current default behavior); a value = private to that shop only, when Head Office turns off product sync
+  product_code      String    @db.VarChar(100)
+  product_name      String    @db.VarChar(100)
+  product_note      String    @db.Text
+  status            Int?      @default(1) @db.TinyInt
+  subcategory_id    Int
+  barcode_path      String    @db.VarChar(300)
+  barcode           String    @db.VarChar(100)
+  sku               String?   @db.VarChar(100)
+  tax_id            Int
+  measurement_units String
+  packet_size       Decimal?  @db.Decimal(10,1) @default(0)  // CHANGED: (10,2) → (10,1)
+
+  subcategory      tbl_subcategory        @relation(fields: [subcategory_id], references: [subcategory_id])
+  tax              tbl_tax                @relation(fields: [tax_id], references: [tax_id])
+  attributes       tbl_attribute[]
+  damages          tbl_damage_product[]
+  inventories      tbl_inventory[]
+  images           tbl_product_image[]
+  prices           tbl_product_price[]
+  tags             tbl_product_tag[]
+  special_offers   tbl_special_offer[]
+  tier_prices      tbl_tier_price[]
+  order_details    tbl_order_details[]
+  purchase_details tbl_purchase_product[]
+  return_items     tbl_return_item[]
+  batches          tbl_purchase_batch[]
+  transfer_items   tbl_stock_transfer_item[]
+
+  expiration_date         DateTime? @db.Date
+  has_expiration          Boolean   @default(false)
+  days_before_expiry_alert Int?      @default(30)
+
+  @@map("tbl_product")
+}
+
+// ---------------------------
+// Product Images
+// ---------------------------
+model tbl_product_image {
+  product_image_id Int    @id @default(autoincrement())
+  product_id       Int
+  image_path       String @db.VarChar(300)
+  filename         String @db.VarChar(100)
+
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+
+  @@map("tbl_product_image")
+}
+
+// ---------------------------
+// Product Price
+// ---------------------------
+model tbl_product_price {
+  product_price_id Int     @id @default(autoincrement())
+  product_id       Int
+  shop_id          Int     @default(1)
+  buying_price     Decimal @db.Decimal(10,2)
+  selling_price    Decimal @db.Decimal(10,2)
+
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+  shop    tbl_shop    @relation(fields: [shop_id], references: [shop_id])
+
+  @@unique([product_id, shop_id])
+  @@map("tbl_product_price")
+}
+
+// ---------------------------
+// Product Tag
+// ---------------------------
+model tbl_product_tag {
+  product_tag_id Int    @id @default(autoincrement())
+  product_id     Int
+  tag            String @db.VarChar(100)
+
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+
+  @@map("tbl_product_tag")
+}
+
+// ---------------------------
+// Purchases & Purchase Products
+// ---------------------------
+model tbl_purchase {
+  purchase_id           Int      @id @default(autoincrement())
+  shop_id               Int      @default(1)
+  purchase_order_number Int
+  supplier_id           Int
+  supplier_name         String   @db.VarChar(128)
+  grand_total           Decimal  @db.Decimal(10,2)
+  purchase_ref          String   @db.VarChar(128)
+  payment_method        String   @db.VarChar(128)
+  payment_ref           String   @db.VarChar(128)
+  purchase_by           String   @db.VarChar(100)
+  datetime              DateTime @default(now()) @db.Timestamp(0)
+
+  shop     tbl_shop               @relation(fields: [shop_id], references: [shop_id])
+  supplier tbl_supplier           @relation(fields: [supplier_id], references: [supplier_id])
+  details  tbl_purchase_product[]
+  batches  tbl_purchase_batch[]
+
+  @@index([shop_id])
+  @@map("tbl_purchase")
+}
+
+model tbl_purchase_product {
+  purchase_product_id Int      @id @default(autoincrement())
+  product_id          Int
+  purchase_id         Int
+  product_code        String   @db.VarChar(100)
+  product_name        String   @db.VarChar(128)
+  qty                 Decimal  @db.Decimal(10,1)  // CHANGED: (10,2) → (10,1)
+  unit_price          Decimal  @db.Decimal(10,2)
+  sub_total           Decimal  @db.Decimal(10,2)
+
+  product  tbl_product  @relation(fields: [product_id], references: [product_id])
+  purchase tbl_purchase @relation(fields: [purchase_id], references: [purchase_id])
+
+  @@map("tbl_purchase_product")
+}
+
+// ---------------------------
+// Special Offer
+// ---------------------------
+model tbl_special_offer {
+  special_offer_id Int       @id @default(autoincrement())
+  product_id       Int
+  shop_id          Int       @default(1)
+  offer_price      Decimal?  @db.Decimal(10,2)
+  start_date       DateTime? @db.Date
+  end_date         DateTime? @db.Date
+
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+  shop    tbl_shop    @relation(fields: [shop_id], references: [shop_id])
+
+  @@index([shop_id])
+  @@map("tbl_special_offer")
+}
+
+// ---------------------------
+// Supplier
+// ---------------------------
+model tbl_supplier {
+  supplier_id   Int    @id @default(autoincrement())
+  shop_id       Int?   // NULL = shared with every franchise; a value = private to that shop only (controlled by Head Office's Sync Settings)
+  warehouse_only Boolean @default(false) // when shop_id is NULL, restricts visibility to warehouse-flagged shops only (not regular franchises) — e.g. a bulk-goods supplier that only warehouses order from
+  company_name  String @db.VarChar(100)
+  supplier_name String @db.VarChar(100)
+  email         String @db.VarChar(100)
+  phone         String @db.VarChar(100)
+  address       String @db.Text
+
+  shop      tbl_shop?      @relation(fields: [shop_id], references: [shop_id])
+  purchases tbl_purchase[]
+
+  @@index([shop_id])
+  @@map("tbl_supplier")
+}
+
+// ---------------------------
+// Tag (ADDED BACK)
+// ---------------------------
+model tbl_tag {
+  tag_id Int    @id @default(autoincrement())
+  tag    String @db.VarChar(100)
+
+  @@map("tbl_tag")
+}
+
+// ---------------------------
+// Tax
+// ---------------------------
+model tbl_tax {
+  tax_id    Int     @id @default(autoincrement())
+  shop_id   Int?    // NULL = shared with every franchise; a value = private to that shop only
+  tax_title String  @db.VarChar(100)
+  tax_rate  Decimal @db.Decimal(10,2)
+  tax_type  Int
+
+  products tbl_product[]
+
+  @@map("tbl_tax")
+}
+
+// ---------------------------
+// Tier Price
+// ---------------------------
+model tbl_tier_price {
+  tier_price_id  Int     @id @default(autoincrement())
+  product_id     Int
+  shop_id        Int     @default(1)
+  tier_price     Decimal @db.Decimal(10,2)
+  quantity_above Decimal @db.Decimal(10,1)  // CHANGED: (10,2) → (10,1)
+
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+  shop    tbl_shop    @relation(fields: [shop_id], references: [shop_id])
+
+  @@index([shop_id])
+  @@map("tbl_tier_price")
+}
+
+// ---------------------------
+// Authentication & User
+// ---------------------------
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerAccountId])
+  @@map("account")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("session")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtoken")
+}
+
+model User {
+  id             String      @id @default(cuid())
+  name           String?
+  email          String      @unique
+  emailVerified  DateTime?
+  image          String?
+  password       String?
+  flag           String?
+  shop_id        Int?        // null = super admin / CEO, sees all shops
+  is_super_admin Boolean     @default(false)
+  accounts       Account[]
+  sessions       Session[]
+  user_roles     User_role[]
+  shop           tbl_shop?   @relation(fields: [shop_id], references: [shop_id])
+
+  @@map("user")
+}
+
+model User_role {
+  user_role_id Int    @id @default(autoincrement())
+  email        String
+  menu_name    String
+
+  user User @relation(fields: [email], references: [email], onDelete: Cascade)
+
+  @@index([email])
+  @@map("user_role")
+}
+// ---------------------------
+// Product Returns
+// ---------------------------
+model tbl_return {
+  return_id       Int      @id @default(autoincrement())
+  shop_id         Int      @default(1)
+  return_no       Int
+  order_id        Int
+  return_type     String   @db.VarChar(20)   // 'payment' or 'exchange'
+  refund_method   String?  @db.VarChar(30)   // 'cash' | 'card' | 'bank_transfer' | 'easypaisa' | 'jazzcash' | 'store_credit' — only set when return_type = 'payment'
+  return_date     DateTime @default(now()) @db.Timestamp(0)
+  note            String?  @db.Text
+  processed_by    String   @db.VarChar(100)
+
+  shop    tbl_shop         @relation(fields: [shop_id], references: [shop_id])
+  order   tbl_order        @relation(fields: [order_id], references: [order_id])
+  items   tbl_return_item[]
+
+  @@index([shop_id])
+  @@map("tbl_return")
+}
+
+model tbl_return_item {
+  return_item_id    Int     @id @default(autoincrement())
+  return_id         Int
+  product_id        Int
+  product_name      String  @db.VarChar(128)
+  product_code      String  @db.VarChar(100)
+  qty               Decimal @db.Decimal(10,1)
+  unit_price        Decimal @db.Decimal(10,2)
+  sub_total         Decimal @db.Decimal(10,2)
+  item_type         String  @db.VarChar(20)  // 'returned' or 'exchange'
+
+  return_record tbl_return  @relation(fields: [return_id], references: [return_id])
+  product       tbl_product @relation(fields: [product_id], references: [product_id])
+
+  @@map("tbl_return_item")
+}
+
+// ---------------------------
+// Printer Settings (admin-managed thermal printer name + layout)
+// ---------------------------
+model tbl_printer_setting {
+  printer_id       Int      @id @default(autoincrement())
+  shop_id          Int      @default(1)
+  printer_name     String   @db.VarChar(100)   // display/queue name of the thermal printer
+  paper_width_mm   Int      @default(80)       // 58 or 80
+  is_default       Boolean  @default(false)
+  layout_json      String   @db.Text           // JSON: header/footer text, show_logo, show_tax_breakdown, font_size, fields order, etc.
+  applies_to       String   @default("all") @db.VarChar(30) // 'all' | 'invoice' | 'receipt' | 'return' | 'purchase' | 'barcode'
+  created_at       DateTime @default(now()) @db.Timestamp(0)
+  updated_at       DateTime @updatedAt @db.Timestamp(0)
+
+  shop tbl_shop @relation(fields: [shop_id], references: [shop_id])
+
+  @@index([shop_id])
+  @@map("tbl_printer_setting")
+}
+
+// ---------------------------
+// Theme Settings (admin-managed page/UI colours)
+// ---------------------------
+model tbl_theme_setting {
+  theme_setting_id Int      @id @default(autoincrement())
+  setting_key      String   @unique @db.VarChar(100) // e.g. 'color_primary', 'color_sidebar_bg', 'color_topbar_text'
+  setting_value    String   @db.VarChar(50)           // hex/rgb value
+  category         String   @default("general") @db.VarChar(50) // 'sidebar' | 'topbar' | 'buttons' | 'pages' | 'general'
+  label            String   @db.VarChar(150)          // human readable name shown in admin
+  updated_at       DateTime @updatedAt @db.Timestamp(0)
+
+  @@map("tbl_theme_setting")
+}
+
+// ---------------------------
+// Sync Settings (Head Office controls which data types are shared
+// across every franchise vs. kept private to whichever shop created
+// them). Read by every relevant create/list action to decide whether a
+// new record gets shop_id = NULL (shared) or shop_id = <creating shop>
+// (private), and whether reads include other shops' shared rows.
+// ---------------------------
+model tbl_sync_setting {
+  sync_setting_id Int      @id @default(autoincrement())
+  data_type       String   @unique @db.VarChar(50) // 'products' | 'categories' | 'tax_rules' | 'measurement_units' | 'tailor_data'
+  label           String   @db.VarChar(150)
+  is_synced       Boolean  @default(true) // true = shared across all franchises, false = private per shop
+  updated_at      DateTime @updatedAt @db.Timestamp(0)
+
+  @@map("tbl_sync_setting")
+}
+
+// ---------------------------
+// Notification Settings (SMTP + WhatsApp, for tailor order status
+// updates). A single global row — one business, one set of credentials.
+// ---------------------------
+model tbl_notification_config {
+  config_id              Int      @id @default(autoincrement())
+  notify_email_enabled    Boolean @default(false)
+  notify_whatsapp_enabled Boolean @default(false)
+  smtp_host               String? @db.VarChar(150)
+  smtp_port               Int?    @default(587)
+  smtp_secure             Boolean @default(false) // true = TLS/SSL
+  smtp_user               String? @db.VarChar(150)
+  smtp_password            String? @db.VarChar(255)
+  smtp_from_email         String? @db.VarChar(150)
+  smtp_from_name          String? @db.VarChar(150)
+  whatsapp_api_url        String? @db.VarChar(300) // generic webhook-style endpoint for whichever provider is used
+  whatsapp_api_token      String? @db.VarChar(500)
+  updated_at              DateTime @updatedAt @db.Timestamp(0)
+
+  @@map("tbl_notification_config")
+}
+
+// Admin-customizable tailor style option lists (pocket styles, bain
+// styles, collar cuts, qurta styles, and the freeform style checkboxes)
+// — same idea as tbl_measurement_unit: instead of hardcoding the choices
+// in code, Head Office manages them here, same as Measurement Units.
+model tbl_tailor_style_option {
+  option_id    Int      @id @default(autoincrement())
+  option_group String   @db.VarChar(30) // 'pocket_style' | 'collar_style' | 'collar_cut' | 'qurta_style' | 'checkbox'
+  option_value String   @db.VarChar(50) // stored value, e.g. 'gol_bain'
+  option_label String   @db.VarChar(100) // shown to the user, e.g. 'Gol Bain'
+  sort_order   Int      @default(0)
+  is_active    Boolean  @default(true)
+  created_at   DateTime @default(now()) @db.Timestamp(0)
+
+  @@unique([option_group, option_value])
+  @@map("tbl_tailor_style_option")
+}
+
+// ---------------------------
+// Tailor Module (per-shop garment orders with measurements & tracking)
+// ---------------------------
+model tbl_tailor_order {
+  tailor_order_id    Int      @id @default(autoincrement())
+  shop_id            Int
+  customer_id        Int
+  order_number       String   @db.VarChar(30) // shop-facing tracking code, e.g. "MLN-2-TLR-0001" — same brand-prefixed scheme as POS orders/invoices
+
+  garment_type    String   @db.VarChar(60)  // e.g. 'Shalwar Kameez', 'Kurta', 'Coat', 'Suit'
+  fabric_details  String?  @db.Text          // fabric provided by customer or shop, color, notes
+  quantity        Int      @default(1)
+
+  // Design/cut codes, matching common Pakistani tailor shop conventions
+  design_number String?  @db.VarChar(30)  // shop's internal design/cut code
+  size_1        String?  @db.VarChar(20)  // e.g. collar or cuff size code
+  size_2        String?  @db.VarChar(20)
+  pocket_style  String?  @db.VarChar(20)  // '1_side' | '2_side' | 'none'
+  collar_style  String?  @db.VarChar(20)  // 'gol_bain' | 'sida_bain' | 'half_bain' | 'gol_gala' | 'none'
+  collar_cut    String?  @db.VarChar(20)  // 'american' | 'english' | 'french' | 'none'
+  qurta_style   String?  @db.VarChar(20)  // 'qurta' | 'sida_daman' | 'none'
+  // Freeform checkbox-style options (large buttons, metal buttons, kaf dboty,
+  // kaj patti, 5 button, no label, shalwar zip, 2/no jeb, etc.) — kept as a
+  // flexible set rather than one column per option, since exact conventions
+  // vary shop to shop and this avoids a migration every time a shop wants a
+  // new option. Stored as {"option_key": true/false}.
+  style_options Json?
+
+  // Itemized charges — sum to `price`, kept separately so a shop can show
+  // the customer a breakdown the way the paper/software forms do.
+  tailoring_amount       Decimal @default(0) @db.Decimal(10,2)
+  extra_stitching_amount Decimal @default(0) @db.Decimal(10,2)
+  other_charges_amount   Decimal @default(0) @db.Decimal(10,2)
+  price           Decimal  @db.Decimal(10,2) // total — tailoring + extra stitching + other charges
+  advance_paid    Decimal  @default(0) @db.Decimal(10,2)
+
+  // Status workflow: received (order taken) → in_process (cutting/stitching)
+  // → ready (finished, awaiting pickup/delivery) → delivered → cancelled
+  status          String   @db.VarChar(20) @default("received")
+
+  order_date      DateTime @default(now()) @db.Timestamp(0)
+  promised_date   DateTime? @db.Date  // when it was promised to the customer
+  ready_date      DateTime? @db.Timestamp(0)
+  delivered_date  DateTime? @db.Timestamp(0)
+
+  // Delivery
+  delivery_method  String?  @db.VarChar(20) // 'pickup' | 'home_delivery'
+  delivery_address String?  @db.Text
+  delivery_phone   String?  @db.VarChar(30)
+  rider_name       String?  @db.VarChar(100)
+  tracking_note    String?  @db.Text // freeform: courier tracking number, rider notes, etc.
+
+  taken_by   String   @db.VarChar(100) // staff who took the order
+  notes      String?  @db.Text
+
+  created_at DateTime @default(now()) @db.Timestamp(0)
+  updated_at DateTime @updatedAt @db.Timestamp(0)
+
+  shop            tbl_shop            @relation(fields: [shop_id], references: [shop_id])
+  customer tbl_customer @relation(fields: [customer_id], references: [customer_id])
+  status_history  tbl_tailor_order_status_log[]
+
+  @@unique([shop_id, order_number])
+  @@index([shop_id])
+  @@index([shop_id, status])
+  @@map("tbl_tailor_order")
+}
+
+// Every status change is logged, so a customer's garment can be tracked
+// end-to-end and staff activity is auditable here too.
+model tbl_tailor_order_status_log {
+  status_log_id   Int      @id @default(autoincrement())
+  tailor_order_id Int
+  status          String   @db.VarChar(20)
+  note            String?  @db.Text
+  changed_by      String   @db.VarChar(100)
+  changed_at      DateTime @default(now()) @db.Timestamp(0)
+
+  tailor_order tbl_tailor_order @relation(fields: [tailor_order_id], references: [tailor_order_id])
+
+  @@map("tbl_tailor_order_status_log")
+}
+
+// ---------------------------
+// Warehouse: Inter-Franchise Stock Transfers & Billing
+// ---------------------------
+// Lets Head Office (or any shop) send stock to another shop — e.g. Head
+// Office acting as a central warehouse distributing to franchises. Each
+// transfer is its own internal invoice: it creates a balance the
+// receiving shop owes the sending shop, tracked independently of the
+// customer-facing ledger.
+model tbl_stock_transfer {
+  transfer_id     Int      @id @default(autoincrement())
+  transfer_number String   @unique @db.VarChar(30) // e.g. "TRF-0001"
+  from_shop_id    Int
+  to_shop_id      Int
+
+  // pending (created, stock already deducted from sender) → received
+  // (destination confirmed receipt, stock added to their inventory)
+  // → cancelled (sender voided before receipt; stock restored to sender)
+  status          String   @default("pending") @db.VarChar(20)
+
+  total_amount    Decimal  @default(0) @db.Decimal(10,2) // what the destination owes the sender
+  amount_paid     Decimal  @default(0) @db.Decimal(10,2) // settled so far
+  notes           String?  @db.Text
+
+  created_by      String   @db.VarChar(100)
+  sent_date       DateTime @default(now()) @db.Timestamp(0)
+  received_date   DateTime? @db.Timestamp(0)
+
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  updated_at      DateTime @updatedAt @db.Timestamp(0)
+
+  from_shop tbl_shop @relation("TransferFrom", fields: [from_shop_id], references: [shop_id])
+  to_shop   tbl_shop @relation("TransferTo", fields: [to_shop_id], references: [shop_id])
+  items     tbl_stock_transfer_item[]
+  payments  tbl_stock_transfer_payment[]
+
+  @@index([from_shop_id])
+  @@index([to_shop_id])
+  @@index([status])
+  @@map("tbl_stock_transfer")
+}
+
+model tbl_stock_transfer_item {
+  transfer_item_id Int     @id @default(autoincrement())
+  transfer_id      Int
+  product_id       Int
+  product_name     String  @db.VarChar(128) // denormalized snapshot at time of transfer
+  quantity         Decimal @db.Decimal(10,1)
+  unit_price       Decimal @db.Decimal(10,2)
+  sub_total        Decimal @db.Decimal(10,2)
+
+  transfer tbl_stock_transfer @relation(fields: [transfer_id], references: [transfer_id], onDelete: Cascade)
+  product  tbl_product        @relation(fields: [product_id], references: [product_id])
+
+  @@map("tbl_stock_transfer_item")
+}
+
+// Payments the receiving franchise makes toward settling a transfer's balance
+model tbl_stock_transfer_payment {
+  payment_id  Int      @id @default(autoincrement())
+  transfer_id Int
+  amount      Decimal  @db.Decimal(10,2)
+  method      String   @db.VarChar(30) // 'cash' | 'card' | 'bank_transfer' | 'easypaisa' | 'jazzcash'
+  note        String?  @db.Text
+  recorded_by String   @db.VarChar(100)
+  paid_at     DateTime @default(now()) @db.Timestamp(0)
+
+  transfer tbl_stock_transfer @relation(fields: [transfer_id], references: [transfer_id], onDelete: Cascade)
+
+  @@map("tbl_stock_transfer_payment")
+}
+
+// ---------------------------
+// Activity Log (Head Office oversight — theft/fraud prevention)
+// ---------------------------
+model tbl_activity_log {
+  log_id      Int      @id @default(autoincrement())
+  shop_id     Int?     // null = platform-level action (e.g. Head Office registering a franchise)
+  user_email  String   @db.VarChar(100)
+  user_name   String   @db.VarChar(100)
+  action      String   @db.VarChar(60)    // e.g. 'sale.create', 'refund.process', 'order.cancel', 'damage.record', 'ledger.transaction', 'user.create'
+  entity_type String   @db.VarChar(60)    // e.g. 'order', 'return', 'ledger', 'product', 'user'
+  entity_id   String   @db.VarChar(60)
+  description String   @db.Text
+  created_at  DateTime @default(now()) @db.Timestamp(0)
+
+  shop tbl_shop? @relation(fields: [shop_id], references: [shop_id])
+
+  @@index([shop_id])
+  @@index([created_at])
+  @@index([action])
+  @@map("tbl_activity_log")
+}
+
+// ---------------------------
+// Purchase Batch
+// ---------------------------
+model tbl_purchase_batch {
+  batch_id          Int      @id @default(autoincrement())
+  purchase_id       Int
+  product_id        Int
+  shop_id           Int      @default(1)
+  product_code      String   @db.VarChar(100)
+  product_name      String   @db.VarChar(128)
+  batch_number      String   @db.VarChar(100)
+  qty               Decimal  @db.Decimal(10,1)
+  qty_remaining     Decimal  @db.Decimal(10,1)
+  buying_price      Decimal  @db.Decimal(10,2)
+  selling_price     Decimal  @db.Decimal(10,2)
+  expiry_date       DateTime? @db.Date
+  manufacture_date  DateTime? @db.Date
+  purchase_date     DateTime @default(now()) @db.Timestamp(0)
+  is_active         Boolean  @default(true)
+
+  purchase tbl_purchase @relation(fields: [purchase_id], references: [purchase_id])
+  product  tbl_product  @relation(fields: [product_id], references: [product_id])
+  shop     tbl_shop     @relation(fields: [shop_id], references: [shop_id])
+
+  @@index([shop_id])
+  @@map("tbl_purchase_batch")
+}
+
+// Generic photo attachments — one table covers tailor orders (fabric/
+// garment photos), damage products, returns/exchanges, and warehouse
+// stock adjustments (condition photos), keyed by entity_type + entity_id
+// instead of a separate photos table per feature.
+model tbl_entity_photo {
+  photo_id    Int      @id @default(autoincrement())
+  entity_type String   @db.VarChar(30) // 'tailor_order' | 'damage_product' | 'return' | 'warehouse_stock'
+  entity_id   Int
+  file_name   String   @db.VarChar(255)
+  caption     String?  @db.VarChar(255)
+  uploaded_by String   @db.VarChar(100)
+  uploaded_at DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([entity_type, entity_id])
+  @@map("tbl_entity_photo")
+}
+
+// Tracks every login attempt (success or failure) for brute-force
+// protection — checked in auth.ts before validating credentials, so an
+// attacker can't even test password guesses once a threshold is hit,
+// regardless of whether a guess happens to be correct.
+model tbl_login_attempt {
+  attempt_id   Int      @id @default(autoincrement())
+  email        String   @db.VarChar(150)
+  ip_address   String   @db.VarChar(64)
+  success      Boolean
+  attempted_at DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([email, attempted_at])
+  @@index([ip_address, attempted_at])
+  @@map("tbl_login_attempt")
+}

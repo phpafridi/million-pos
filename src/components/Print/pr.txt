@@ -1,0 +1,201 @@
+'use client'
+
+import { useEffect, useState } from "react"
+import { fetchCurrency } from "../settings/actions/fetchCurrency"
+import { Br, Cut, Line, Printer, Text, Row, render, Image } from "react-thermal-printer"
+import { getCompanyLogo, getCompanyName } from '../OrderProcess/actions/FetchCompanyDetails'
+// @ts-ignore
+import qz from "qz-tray"
+
+type CartItem = {
+  product_name: string
+  qty: number
+  price: number
+  taxAmount?: number
+}
+
+type Customer = {
+  customer_name: string
+}
+
+type PrintReceiptProps = {
+  printerName?: string
+  customer: Customer
+  cart: CartItem[]
+  subtotal: number
+  discount: number
+  grandTotal: number
+  paidAmount: number
+  changeAmount: number
+}
+
+export default function PrintReceipt({
+  printerName = "POS-80-Series",
+  customer,
+  cart,
+  subtotal,
+  discount,
+  grandTotal,
+  paidAmount,
+  changeAmount,
+}: PrintReceiptProps) {
+  const [currency, setCurrency] = useState<string>("")
+  const [companyLogo, setCompanyLogo] = useState<string>("")
+  const [companyName, setCompanyName] = useState<string>("")
+
+  useEffect(() => {
+    const loadCurrency = async () => {
+      try {
+        const cur = await fetchCurrency()
+        if (typeof cur === "string") {
+          setCurrency(cur)
+        } else if (cur && typeof cur === "object" && "currency" in cur) {
+          setCurrency(cur.currency)
+        } else {
+          setCurrency("Rs")
+        }
+      } catch (err) {
+        console.error("Failed to load currency:", err)
+        setCurrency("Rs")
+      }
+    }
+
+    const loadCompanyDetails = async () => {
+      try {
+        const logo = await getCompanyLogo()
+        const name = await getCompanyName()
+        setCompanyLogo(logo || "")
+        setCompanyName(name || "")
+      } catch (err) {
+        console.error("Failed to load company details:", err)
+      }
+    }
+
+    loadCurrency()
+    loadCompanyDetails()
+  }, [])
+
+  const printReceipt = async () => {
+    const receipt = (
+      <Printer type="epson" width={42}>
+        {/* ✅ Company Logo centered */}
+        {companyLogo && (
+          <>
+            <Image
+              src={`/api/uploads/${encodeURIComponent(companyLogo ?? "default.jpg")}`}
+              align="center"
+              reader={async (elem) => {
+                const src: string = elem.props.src
+                return new Promise((resolve, reject) => {
+                  try {
+                    const img = new window.Image()
+                    img.crossOrigin = "anonymous"
+                    img.onload = () => {
+                      try {
+                        const targetWidth = 384 // 80mm printer width
+                        const scale = Math.min(1, targetWidth / img.width)
+                        const drawWidth = Math.round(img.width * scale)
+                        const drawHeight = Math.round(img.height * scale)
+
+                        const canvas = document.createElement("canvas")
+                        canvas.width = targetWidth
+                        canvas.height = drawHeight
+
+                        const ctx = canvas.getContext("2d")
+                        if (!ctx) {
+                          reject(new Error("Canvas context not available"))
+                          return
+                        }
+
+                        ctx.fillStyle = "#FFFFFF"
+                        ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+                        // center horizontally
+                        const x = Math.round((canvas.width - drawWidth) / 2) + 90
+                        ctx.drawImage(img, x, 0, drawWidth, drawHeight)
+
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+
+                        resolve({
+                          width: imageData.width,
+                          height: imageData.height,
+                          data: new Uint8Array(imageData.data.buffer),
+                        })
+                      } catch (innerErr) {
+                        reject(innerErr)
+                      }
+                    }
+                    img.onerror = (e) => reject(new Error("Failed to load image: " + String(e)))
+                    img.src = src
+                  } catch (err) {
+                    reject(err)
+                  }
+                })
+              }}
+            />
+            <Br />
+          </>
+        )}
+
+        {/* ✅ Company Name */}
+        {companyName && (
+          <>
+            <Text align="center" bold={true}>{companyName}</Text>
+            <Br />
+          </>
+        )}
+
+        <Text size={{ width: 2, height: 2 }}>
+          {currency}{grandTotal.toFixed(2)}
+        </Text>
+        <Text bold={true}>Payment Complete</Text>
+        <Br />
+        <Line />
+        <Row left="Customer" right={customer.customer_name} />
+        <Row left="Paid" right={`${currency}${paidAmount.toFixed(2)}`} />
+        <Row left="Change" right={`${currency}${changeAmount.toFixed(2)}`} />
+        <Line />
+
+        {cart.map((item, idx) => (
+          <Row
+            key={idx}
+            left={`${item.product_name} x${item.qty}`}
+            right={`${currency}${(item.price * item.qty + (item.taxAmount ?? 0)).toFixed(2)}`}
+          />
+        ))}
+
+        <Br />
+        <Line />
+        <Row left="Subtotal" right={`${currency}${subtotal.toFixed(2)}`} />
+        <Row left="Discount" right={`- ${currency}${discount.toFixed(2)}`} />
+        <Row left="Grand Total" right={`${currency}${grandTotal.toFixed(2)}`} />
+        <Line />
+        <Br />
+        <Text align="center">Thank you for shopping!</Text>
+        <Cut />
+      </Printer>
+    )
+
+    const data: Uint8Array = await render(receipt)
+    const base64Data = btoa(String.fromCharCode(...data))
+
+    try {
+      await qz.websocket.connect()
+      const printer = await qz.printers.find(printerName)
+      await qz.print(qz.configs.create(printer), [
+        { type: "raw", format: "base64", data: base64Data }
+      ])
+      console.log("Print successful")
+    } catch (err) {
+      console.error("Printing failed", err)
+    } finally {
+      qz.websocket.disconnect()
+    }
+  }
+
+  return (
+    <button onClick={printReceipt} style={{ display: "none" }} id="hiddenPrintBtn">
+      Print
+    </button>
+  )
+}

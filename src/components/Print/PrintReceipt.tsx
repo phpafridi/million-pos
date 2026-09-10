@@ -22,6 +22,19 @@ type Customer = {
   customer_name: string
 }
 
+type TailorReceiptDetails = {
+  phone?: string
+  garmentType?: string
+  fabricDetails?: string
+  promisedDate?: string | Date
+  status?: string
+  deliveryMethod?: string
+  deliveryAddress?: string
+  deliveryPhone?: string
+  styleOptions?: string[]
+  measurements?: { label: string; value: string }[]
+}
+
 type PrintReceiptProps = {
   printerName?: string
   customer: Customer
@@ -37,6 +50,7 @@ type PrintReceiptProps = {
   loyaltyPointsEarned?: number
   loyaltyPointsRedeemed?: number
   loyaltyPointsBalance?: number
+  tailorDetails?: TailorReceiptDetails
 }
 
 type PrinterLayout = {
@@ -86,6 +100,7 @@ export default function PrintReceipt({
   loyaltyPointsEarned,
   loyaltyPointsRedeemed,
   loyaltyPointsBalance,
+  tailorDetails,
 }: PrintReceiptProps) {
   const [currency, setCurrency] = useState<string>("")
   const [companyLogo, setCompanyLogo] = useState<string>("")
@@ -306,6 +321,49 @@ export default function PrintReceipt({
           <Row left="Date" right={new Date(orderDate || Date.now()).toLocaleString()} />
         )}
         <Row left="Customer" right={customer.customer_name} />
+
+        {tailorDetails && (
+          <>
+            <Line />
+            <Text bold={true} size={{ width: 1, height: 1 }}>ORDER DETAILS</Text>
+            {tailorDetails.phone && <Row left="Phone" right={tailorDetails.phone} />}
+            {tailorDetails.garmentType && <Row left="Garment" right={tailorDetails.garmentType} />}
+            {tailorDetails.fabricDetails && <Row left="Fabric" right={tailorDetails.fabricDetails} />}
+            {tailorDetails.promisedDate && <Row left="Promised" right={new Date(tailorDetails.promisedDate).toLocaleDateString()} />}
+            {tailorDetails.status && <Row left="Status" right={tailorDetails.status} />}
+            {tailorDetails.deliveryMethod && <Row left="Delivery" right={tailorDetails.deliveryMethod} />}
+
+            {tailorDetails.deliveryMethod === 'Home Delivery' && (tailorDetails.deliveryAddress || tailorDetails.deliveryPhone) && (
+              <>
+                <Line />
+                <Text bold={true} size={{ width: 1, height: 1 }}>DELIVERY DETAILS</Text>
+                {tailorDetails.deliveryPhone && <Row left="Contact" right={tailorDetails.deliveryPhone} />}
+                {tailorDetails.deliveryAddress && <Text size={{ width: 1, height: 1 }}>{tailorDetails.deliveryAddress}</Text>}
+              </>
+            )}
+
+            {tailorDetails.styleOptions && tailorDetails.styleOptions.length > 0 && (
+              <>
+                <Line />
+                <Text bold={true} size={{ width: 1, height: 1 }}>STYLE OPTIONS</Text>
+                <Text size={{ width: 1, height: 1 }}>{tailorDetails.styleOptions.join(', ')}</Text>
+              </>
+            )}
+
+            {tailorDetails.measurements && tailorDetails.measurements.length > 0 && (
+              <>
+                <Line />
+                <Text bold={true} size={{ width: 1, height: 1 }}>MEASUREMENTS (inches)</Text>
+                {tailorDetails.measurements.map((m, i) => (
+                  <Row key={i} left={m.label} right={m.value} />
+                ))}
+              </>
+            )}
+            <Line />
+            <Text bold={true} size={{ width: 1, height: 1 }}>PAYMENT</Text>
+          </>
+        )}
+
         {layout.showCashier && salesPerson && (
           <Row left="Cashier" right={salesPerson} />
         )}
@@ -382,8 +440,8 @@ export default function PrintReceipt({
       const msg = String(err?.message || err || '')
       if (msg.toLowerCase().includes('unable to establish connection') || msg.toLowerCase().includes('websocket')) {
         toast.error('Cannot reach QZ Tray — make sure it\'s installed and running on this computer.')
-      } else if (msg.toLowerCase().includes('printer') && (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('undefined'))) {
-        toast.error(`Printer "${resolvedPrinterName}" not found — check the printer name in Printer Settings matches exactly what's registered on this computer.`)
+      } else if (msg.toLowerCase().includes('printer') && ((msg.toLowerCase().includes('not') && msg.toLowerCase().includes('found')) || msg.toLowerCase().includes('undefined'))) {
+        toast.error(`Printer "${resolvedPrinterName}" not found on this computer — go to Settings > Printer Settings and make sure the printer name matches exactly what's installed here (check your Windows printer list for the exact spelling).`)
       } else {
         toast.error(`Print failed: ${msg || 'unknown error'}`)
       }

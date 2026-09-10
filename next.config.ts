@@ -24,6 +24,15 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 const nextConfig = {
   reactStrictMode: true,
   turbopack: {},
+  experimental: {
+    serverActions: {
+      // Default is 1MB, which rejects most real phone camera photos
+      // outright — this is what was causing tailor order photo uploads
+      // to fail. 10MB comfortably covers real-world photo sizes without
+      // leaving the limit effectively unbounded.
+      bodySizeLimit: '10mb',
+    },
+  },
 };
 
 module.exports = withPWA(nextConfig);

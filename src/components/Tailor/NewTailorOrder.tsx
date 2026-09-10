@@ -10,6 +10,7 @@ import { STYLE_ICONS, GenericTag } from './icons/StyleIcons'
 import PhotoPicker from '../shared/PhotoPicker'
 import { UploadEntityPhotos } from '@/lib/entityPhotos'
 import PrintReceipt from '../Print/PrintReceipt'
+import { formatAsFraction } from '@/lib/formatMeasurement'
 
 type Customer = {
   tailor_customer_id: number
@@ -278,6 +279,15 @@ export default function NewTailorOrder() {
               Last order created: <strong>{lastOrderNumber}</strong> — give this tracking code to the customer.
               {lastOrderData && (
                 <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-default"
+                    onClick={() => document.getElementById('hiddenPrintBtn')?.click()}
+                    title="Missed the automatic print? Re-print the same thermal receipt."
+                  >
+                    <i className="fa fa-receipt"></i> Print Thermal Receipt
+                  </button>
                   {' '}
                   <button type="button" className="btn btn-xs btn-default" onClick={() => setShowSlip(true)}>
                     Print Slip
@@ -612,26 +622,70 @@ export default function NewTailorOrder() {
         <TailorOrderSlip order={lastOrderData} onClose={() => setShowSlip(false)} />
       )}
 
-      {/* Hidden thermal print trigger — fires automatically right after order creation */}
-      {lastOrderData && (
-        <PrintReceipt
-          customer={{ customer_name: lastOrderData.customer?.customer_name || lastOrderData.tailor_customer?.customer_name || 'Customer' }}
-          cart={[{
-            product_name: `${lastOrderData.garment_type} x${lastOrderData.quantity}`,
-            qty: 1,
-            price: lastOrderData.price,
-            taxAmount: 0,
-          }]}
-          subtotal={lastOrderData.price}
-          discount={0}
-          grandTotal={lastOrderData.price}
-          paidAmount={lastOrderData.advance_paid}
-          changeAmount={0}
-          orderNo={lastOrderData.order_number}
-          orderDate={lastOrderData.order_date}
-          salesPerson={lastOrderData.taken_by}
-        />
-      )}
+      {/* Hidden thermal print trigger — kept mounted from page load (not
+          just after order creation) specifically so its internal
+          printer-settings fetch has time to complete in the background
+          before the auto-print fires. Conditionally mounting this only
+          once an order exists was the actual bug: the component would
+          get created and the auto-click would fire in the very same
+          instant, leaving its settings fetch zero time to finish —
+          exactly why the manual "Print Thermal Receipt" button on the
+          order detail page always worked (that page mounts this
+          immediately on load, giving it a natural head start) while
+          this auto-print did not. */}
+      <PrintReceipt
+        customer={{ customer_name: lastOrderData?.customer?.customer_name || lastOrderData?.tailor_customer?.customer_name || 'Customer' }}
+        cart={[{
+          product_name: lastOrderData ? `${lastOrderData.garment_type} x${lastOrderData.quantity}` : '',
+          qty: 1,
+          price: lastOrderData?.price || 0,
+          taxAmount: 0,
+        }]}
+        subtotal={lastOrderData?.price || 0}
+        discount={0}
+        grandTotal={lastOrderData?.price || 0}
+        paidAmount={lastOrderData?.advance_paid || 0}
+        changeAmount={0}
+        orderNo={lastOrderData?.order_number}
+        orderDate={lastOrderData?.order_date}
+        salesPerson={lastOrderData?.taken_by}
+        tailorDetails={lastOrderData ? {
+          phone: lastOrderData.customer?.phone || lastOrderData.tailor_customer?.phone,
+          garmentType: lastOrderData.garment_type,
+          fabricDetails: lastOrderData.fabric_details || undefined,
+          promisedDate: lastOrderData.promised_date || undefined,
+          status: lastOrderData.status_label,
+          deliveryMethod: lastOrderData.delivery_method === 'home_delivery' ? 'Home Delivery' : 'Customer Pickup',
+          deliveryAddress: lastOrderData.delivery_address || undefined,
+          deliveryPhone: lastOrderData.delivery_phone || undefined,
+          styleOptions: [
+            lastOrderData.pocket_style,
+            lastOrderData.collar_style,
+            lastOrderData.collar_cut,
+            lastOrderData.qurta_style,
+            ...Object.entries(lastOrderData.style_options || {}).filter(([, v]) => v).map(([k]) => k),
+          ]
+            .filter((v): v is string => Boolean(v))
+            .map((v) => v.replace(/_/g, ' ')),
+          measurements: [
+            ['Length', lastOrderData.customer?.measurement_length],
+            ['Teera', lastOrderData.customer?.measurement_teera],
+            ['Chest', lastOrderData.customer?.measurement_chest],
+            ['Waist', lastOrderData.customer?.measurement_waist],
+            ['Hip', lastOrderData.customer?.measurement_hip],
+            ['Shoulder', lastOrderData.customer?.measurement_shoulder],
+            ['Sleeve Length', lastOrderData.customer?.measurement_sleeve_length],
+            ['Sleeve Round', lastOrderData.customer?.measurement_sleeve_round],
+            ['Collar', lastOrderData.customer?.measurement_neck],
+            ['Hem Width', lastOrderData.customer?.measurement_daman],
+            ['Shalwar Length', lastOrderData.customer?.measurement_shalwar_length],
+            ['Ankle Opening', lastOrderData.customer?.measurement_bottom],
+          ]
+            .filter(([, v]) => v !== null && v !== undefined && v !== '')
+            .map(([label, v]) => ({ label: label as string, value: `${formatAsFraction(v as number)}"` })),
+        } : undefined}
+      />
+
     </div>
   )
 }

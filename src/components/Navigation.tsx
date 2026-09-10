@@ -117,6 +117,7 @@ export default function Navigation() {
     '/dashboard/tailor/report',
     '/dashboard/warehouse/balances',
     '/dashboard/warehouse/grn',
+    'Settings',
     '/dashboard/settings/business-profile',
     '/dashboard/settings/localisation',
     '/dashboard/settings/manage-tax-rules',

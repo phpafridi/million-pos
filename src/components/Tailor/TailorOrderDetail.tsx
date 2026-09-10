@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
-import { FetchTailorOrderById, RecordTailorPayment } from './actions/TailorActions'
+import { FetchTailorOrderById, RecordTailorPayment, UpdateTailorOrderStatus } from './actions/TailorActions'
 import { toast } from 'sonner'
 import TailorOrderSlip from './TailorOrderSlip'
 import { STYLE_ICONS, GenericTag } from './icons/StyleIcons'
@@ -58,7 +58,10 @@ export default function TailorOrderDetail({ tailorOrderId }: { tailorOrderId: nu
 
   const load = () => {
     FetchTailorOrderById(tailorOrderId)
-      .then((data) => setOrder(data))
+      .then((data) => {
+        setOrder(data)
+        if (data) setNewStatus(data.status)
+      })
       .catch((err) => {
         console.error('Failed to load tailor order:', err)
         setLoadError(err?.message || 'Failed to load this order.')
@@ -70,6 +73,30 @@ export default function TailorOrderDetail({ tailorOrderId }: { tailorOrderId: nu
   useEffect(() => {
     load()
   }, [tailorOrderId])
+
+  const [newStatus, setNewStatus] = useState('')
+  const [statusNote, setStatusNote] = useState('')
+  const [changingStatus, setChangingStatus] = useState(false)
+
+  const handleStatusChange = async () => {
+    if (!newStatus) return
+    setChangingStatus(true)
+    try {
+      await UpdateTailorOrderStatus({
+        tailor_order_id: tailorOrderId,
+        status: newStatus as any,
+        changed_by: session?.user?.name || session?.user?.email || 'Staff',
+        note: statusNote || undefined,
+      })
+      toast.success('Order status updated')
+      setStatusNote('')
+      load()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update status')
+    } finally {
+      setChangingStatus(false)
+    }
+  }
 
   const handleRecordPayment = async () => {
     const amount = Number(paymentAmount)
@@ -162,6 +189,12 @@ export default function TailorOrderDetail({ tailorOrderId }: { tailorOrderId: nu
                       <p><strong>Promised Date:</strong> {order.promised_date ? new Date(order.promised_date).toLocaleDateString() : '—'}</p>
                       <p><strong>Taken By:</strong> {order.taken_by}</p>
                       {order.delivery_method && <p><strong>Delivery:</strong> {order.delivery_method === 'home_delivery' ? 'Home Delivery' : 'Pickup'}</p>}
+                      {order.delivery_method === 'home_delivery' && (
+                        <div style={{ background: '#fffaf0', border: '1px solid #fde3ac', borderRadius: 6, padding: '8px 12px', marginTop: 6 }}>
+                          <p style={{ margin: 0 }}><strong>Delivery Address:</strong> {order.delivery_address || <span className="text-muted">Not provided</span>}</p>
+                          <p style={{ margin: 0 }}><strong>Delivery Phone:</strong> {order.delivery_phone || <span className="text-muted">Not provided</span>}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -297,6 +330,39 @@ export default function TailorOrderDetail({ tailorOrderId }: { tailorOrderId: nu
                 </div>
               </div>
 
+              {canUpdateStatus && (
+                <div className="box box-primary">
+                  <div className="box-header box-header-background with-border">
+                    <h3 className="box-title">Status</h3>
+                  </div>
+                  <div className="box-background" style={{ padding: 18 }}>
+                    <select className="form-control" value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
+                      <option value="received">Received</option>
+                      <option value="in_process">In Process (Cutting/Stitching)</option>
+                      <option value="ready">Ready for Pickup/Delivery</option>
+                      <option value="delivered">Delivered</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Optional note"
+                      value={statusNote}
+                      onChange={(e) => setStatusNote(e.target.value)}
+                      style={{ marginTop: 8 }}
+                    />
+                    <button
+                      className="btn bg-navy btn-flat btn-block"
+                      onClick={handleStatusChange}
+                      disabled={changingStatus || newStatus === order.status}
+                      style={{ marginTop: 8 }}
+                    >
+                      {changingStatus ? 'Updating...' : 'Update Status'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="box box-primary">
                 <div className="box-header box-header-background with-border">
                   <h3 className="box-title">Payment</h3>
@@ -366,6 +432,41 @@ export default function TailorOrderDetail({ tailorOrderId }: { tailorOrderId: nu
         orderNo={order.order_number}
         orderDate={order.order_date}
         salesPerson={order.taken_by}
+        tailorDetails={{
+          phone: order.customer?.phone,
+          garmentType: order.garment_type,
+          fabricDetails: order.fabric_details || undefined,
+          promisedDate: order.promised_date || undefined,
+          status: order.status_label,
+          deliveryMethod: order.delivery_method === 'home_delivery' ? 'Home Delivery' : 'Customer Pickup',
+          deliveryAddress: order.delivery_address || undefined,
+          deliveryPhone: order.delivery_phone || undefined,
+          styleOptions: [
+            order.pocket_style,
+            order.collar_style,
+            order.collar_cut,
+            order.qurta_style,
+            ...Object.entries(order.style_options || {}).filter(([, v]) => v).map(([k]) => k),
+          ]
+            .filter((v): v is string => Boolean(v))
+            .map((v) => v.replace(/_/g, ' ')),
+          measurements: [
+            ['Length', order.customer?.measurement_length],
+            ['Teera', order.customer?.measurement_teera],
+            ['Chest', order.customer?.measurement_chest],
+            ['Waist', order.customer?.measurement_waist],
+            ['Hip', order.customer?.measurement_hip],
+            ['Shoulder', order.customer?.measurement_shoulder],
+            ['Sleeve Length', order.customer?.measurement_sleeve_length],
+            ['Sleeve Round', order.customer?.measurement_sleeve_round],
+            ['Collar', order.customer?.measurement_neck],
+            ['Hem Width', order.customer?.measurement_daman],
+            ['Shalwar Length', order.customer?.measurement_shalwar_length],
+            ['Ankle Opening', order.customer?.measurement_bottom],
+          ]
+            .filter(([, v]) => v !== null && v !== undefined && v !== '')
+            .map(([label, v]) => ({ label: label as string, value: `${formatAsFraction(v as number)}"` })),
+        }}
       />
 
       {showSlip && (

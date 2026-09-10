@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma'
 import { getShopScope, scopeShopIdForWrite } from '@/lib/getShopScope'
 import { logActivity } from '@/lib/auditLog'
 import { nextOrderNumber, nextInvoiceNumber } from '@/lib/documentNumbers'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
 type OrderItem = {
   product_id: number
@@ -27,8 +29,15 @@ type OrderPayload = {
 
 export async function AddOrder(payload: OrderPayload) {
   try {
-    const { sales_person, customer_id, sale_ref, payment_method,
+    const { customer_id, sale_ref, payment_method,
             paid_amount, discount, cart, sale_date, points_redeemed } = payload
+
+    // Resolved server-side, not trusted from the client — avoids a
+    // timing issue where an order submitted before the session finishes
+    // loading in the browser would fall back to a generic "Staff" label
+    // even though the person is genuinely logged in.
+    const session = await getServerSession(authOptions)
+    const sales_person = session?.user?.name || session?.user?.email || payload.sales_person || 'Unknown'
 
     if (!cart || cart.length === 0) {
       throw new Error('Cart cannot be empty')
@@ -244,11 +253,15 @@ export async function AddOrder(payload: OrderPayload) {
       })
     }
 
-    // Award loyalty points — only for actually-paid orders, not ones
-    // saved as pending, since points shouldn't be earned before payment
-    // is collected.
+    // Award loyalty points — only for actually-paid orders (not pending),
+    // and only if this sale didn't ALSO redeem points. Earning and
+    // redeeming on the same transaction would often cancel each other
+    // out (e.g. redeem 1 point, spend enough to immediately earn 1 back),
+    // making a real redemption look like it silently failed even though
+    // both operations worked correctly. Standard loyalty program rule:
+    // you don't earn on a transaction you paid for partly with points.
     let loyaltyAwarded = 0
-    if (payment_method !== 'pending' && custId) {
+    if (payment_method !== 'pending' && custId && pointsToDeduct === 0) {
       try {
         const { awardLoyaltyPoints } = await import('@/lib/loyalty')
         const result = await awardLoyaltyPoints(custId, subtotal - discountAmount + totalTax)

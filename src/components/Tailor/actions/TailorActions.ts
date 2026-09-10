@@ -99,6 +99,19 @@ export async function AddOrUpdateTailorCustomer(
     measurement_notes: data.measurement_notes || null,
   }
 
+  // Catch a malformed measurement here, with a clear message, rather
+  // than letting it crash as a cryptic MySQL "out of range" error deep
+  // in a create() call. No real body measurement comes anywhere close
+  // to the column's 999.99 ceiling — anything over 200 almost certainly
+  // means something upstream (a fraction that parsed wrong, a stray
+  // extra digit) produced a bad number, not a genuine measurement.
+  for (const [field, val] of Object.entries(measurementPayload)) {
+    if (field === 'measurement_notes') continue
+    if (typeof val === 'number' && (val < 0 || val > 200)) {
+      throw new Error(`${field.replace('measurement_', '').replace(/_/g, ' ')} measurement (${val}) looks wrong — please re-check what was typed.`)
+    }
+  }
+
   if (data.tailor_customer_id) {
     // Only allow editing a customer visible to this shop (shared or their own)
     const existing = await prisma.tbl_customer.findFirst({
@@ -270,7 +283,15 @@ export async function AddTailorOrder(data: {
     }
   }
 
-  return { ...order, loyalty_points_awarded: loyaltyAwarded }
+  return {
+    ...order,
+    tailoring_amount: Number(order.tailoring_amount),
+    extra_stitching_amount: Number(order.extra_stitching_amount),
+    other_charges_amount: Number(order.other_charges_amount),
+    price: Number(order.price),
+    advance_paid: Number(order.advance_paid),
+    loyalty_points_awarded: loyaltyAwarded,
+  }
 }
 
 export async function FetchTailorOrders(filters?: { status?: string; search?: string }) {
@@ -402,7 +423,15 @@ export async function RecordTailorPayment(data: {
     console.error('Failed to award loyalty points for tailor payment:', err)
   }
 
-  return { ...updated, price: Number(updated.price), advance_paid: Number(updated.advance_paid), loyalty_points_awarded: loyaltyAwarded }
+  return {
+    ...updated,
+    tailoring_amount: Number(updated.tailoring_amount),
+    extra_stitching_amount: Number(updated.extra_stitching_amount),
+    other_charges_amount: Number(updated.other_charges_amount),
+    price: Number(updated.price),
+    advance_paid: Number(updated.advance_paid),
+    loyalty_points_awarded: loyaltyAwarded,
+  }
 }
 
 export async function UpdateTailorOrderStatus(data: {

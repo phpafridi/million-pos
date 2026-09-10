@@ -35,6 +35,8 @@ type OrderData = {
   sub_total: number
   discount: number
   discount_amount: number
+  loyalty_points_redeemed: number
+  loyalty_discount_amount: number
   payment_method: string
   datetime: string
   order_status: number
@@ -171,6 +173,8 @@ export default function ViewInvoice({ id, isOrder }: Props) {
         sub_total: o.sub_total,
         discount: o.discount,
         discount_amount: o.discount_amount,
+        loyalty_points_redeemed: o.loyalty_points_redeemed,
+        loyalty_discount_amount: o.loyalty_discount_amount,
         payment_method: o.payment_method,
         datetime: new Date(o.order_date).toLocaleString(),
         details,
@@ -347,6 +351,12 @@ export default function ViewInvoice({ id, isOrder }: Props) {
                             <tr><td>Subtotal</td><td className="text-right">{order.sub_total.toFixed(2)}</td></tr>
                             {order.discount_amount > 0 && (
                               <tr><td>Discount{order.discount > 0 ? ` (${order.discount}%)` : ''}</td><td className="text-right" style={{ color: '#d9403a' }}>-{order.discount_amount.toFixed(2)}</td></tr>
+                            )}
+                            {order.loyalty_points_redeemed > 0 && (
+                              <tr>
+                                <td style={{ color: '#b8860b' }}><i className="fa fa-star" style={{ marginRight: 4 }}></i>Points Redeemed ({order.loyalty_points_redeemed} pts)</td>
+                                <td className="text-right" style={{ color: '#b8860b' }}>-{order.loyalty_discount_amount.toFixed(2)}</td>
+                              </tr>
                             )}
                             {order.tax > 0 && (
                               <tr><td>Tax</td><td className="text-right">{order.tax}</td></tr>

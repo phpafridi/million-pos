@@ -1,5 +1,6 @@
 'use client'
 import React, { useState } from 'react'
+import { useSession } from 'next-auth/react'
 import FetchPurchaseReport, { PurchaseReportRow } from './actions/FetchPurchaseReport'
 import PurchaseReportPDF from './PurchaseReportPDF'
 import { PDFDownloadLink } from '@react-pdf/renderer'
@@ -7,6 +8,8 @@ import { GetBusinessProfile } from '../settings/actions/GetBusinessProfile'
 import { fetchCurrency } from '../settings/actions/fetchCurrency'
 
 export default function PurchaseReport() {
+  const { data: session } = useSession()
+  const isSuperAdmin = Boolean((session?.user as any)?.is_super_admin)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate]     = useState('')
   const [report, setReport]       = useState<PurchaseReportRow[]>([])
@@ -157,6 +160,9 @@ export default function PurchaseReport() {
                     <span className="pur-ref">PUR-{purchase.ref}</span>
                     <div className="pur-head-info">
                       <span><i className="fa fa-truck" style={{ marginRight: 5 }} />{purchase.supplier}</span>
+                      {isSuperAdmin && purchase.shopName && (
+                        <span><i className="fa fa-building" style={{ marginRight: 5 }} />{purchase.shopName}</span>
+                      )}
                       <span><i className="fa fa-calendar" style={{ marginRight: 5 }} />{purchase.date}</span>
                       <span>{purchase.items.length} item{purchase.items.length !== 1 ? 's' : ''}</span>
                     </div>

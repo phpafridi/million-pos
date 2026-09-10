@@ -11,6 +11,7 @@ export type ProductSummary = {
   measurement_units: string
   stockValue: number
   packet_size: number
+  byShop?: { shop_name: string; qty: number }[]
 }
 
 export default async function FetchProduct(): Promise<ProductSummary[]> {
@@ -20,7 +21,7 @@ export default async function FetchProduct(): Promise<ProductSummary[]> {
     include: {
       inventories: {
         where: shopFilter,
-        select: { product_quantity: true },
+        select: { product_quantity: true, shop: { select: { shop_name: true } } },
       },
       prices: {
         where: shopFilter,
@@ -30,20 +31,31 @@ export default async function FetchProduct(): Promise<ProductSummary[]> {
   })
 
   return products.map((p) => {
-    const qty = Number(p.inventories?.[0]?.product_quantity) ?? 0  // Convert to number
-    const cost = Number(p.prices?.[0]?.buying_price) ?? 0         // Convert to number
+    // Sum across every shop's inventory row — taking just the first row
+    // (as this used to do) silently discarded every other franchise's
+    // stock of this product when Head Office viewed this network-wide,
+    // making the total look complete while actually being wrong.
+    const qty = p.inventories.reduce((sum, inv) => sum + Number(inv.product_quantity), 0)
+    const cost = Number(p.prices?.[0]?.buying_price) ?? 0
     const measurement_units = p.measurement_units ?? 'N/A'
-    const packet_size = p.packet_size === null ? 0 : Number(p.packet_size) ?? 0  // Convert to number
+    const packet_size = p.packet_size === null ? 0 : Number(p.packet_size) ?? 0
+
+    const byShop = scope.isSuperAdmin
+      ? p.inventories
+          .filter((inv) => Number(inv.product_quantity) > 0)
+          .map((inv) => ({ shop_name: inv.shop.shop_name, qty: Number(inv.product_quantity) }))
+      : undefined
 
     return {
       id: p.product_id,
       sku: p.product_code,
       name: p.product_name,
-      cost,  // Now this is a number
-      qty,   // Now this is a number
+      cost,
+      qty,
       measurement_units,
-      stockValue: cost * qty,  // This works with numbers
-      packet_size,  // Now this is a number
+      stockValue: cost * qty,
+      packet_size,
+      byShop,
     }
   })
 }

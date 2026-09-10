@@ -48,7 +48,9 @@ export default function Home() {
             )}
             <h1 style={{ color: '#fff', fontWeight: 700, marginBottom: 8 }}>{companyName}</h1>
             <p style={{ color: '#8a90a3', fontSize: 15, marginBottom: 20 }}>Welcome</p>
-            
+            <Link href={`/login/${headOfficeSlug}`} style={{ color: '#f0ad4e', fontSize: 13, textDecoration: 'underline' }}>
+                Staff Login
+            </Link>
         </div>
     );
 }

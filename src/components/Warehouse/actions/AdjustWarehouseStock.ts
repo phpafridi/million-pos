@@ -54,5 +54,16 @@ export async function AdjustWarehouseStock(data: {
     shopIdOverride: shop_id,
   })
 
+  if (data.quantity > 0) {
+    const { createGrn } = await import('@/lib/grn')
+    await createGrn({
+      shop_id,
+      source_type: 'manual_adjustment',
+      source_description: data.reason || 'Manual Stock Correction',
+      received_by: data.adjusted_by,
+      items: [{ product_id: data.product_id, quantity: data.quantity }],
+    })
+  }
+
   return { success: true }
 }

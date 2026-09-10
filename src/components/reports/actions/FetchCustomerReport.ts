@@ -16,6 +16,7 @@ export type CustomerReportRow = {
   tailor_total_spent: number
   total_spent: number
   last_activity: string | null
+  shops: string
 }
 
 export type CustomerReportData = {
@@ -51,15 +52,16 @@ export async function FetchCustomerReport(startDate: string, endDate: string): P
   const [posOrders, tailorOrders] = await Promise.all([
     prisma.tbl_order.findMany({
       where: { ...orderWhere, order_date: { gte: start, lte: end }, order_status: { in: [2, 4] } },
-      select: { customer_id: true, grand_total: true, order_date: true },
+      select: { customer_id: true, grand_total: true, order_date: true, shop_id: true },
     }),
     prisma.tbl_tailor_order.findMany({
       where: { ...orderWhere, order_date: { gte: start, lte: end }, status: { not: 'cancelled' } },
-      select: { customer_id: true, price: true, order_date: true },
+      select: { customer_id: true, price: true, order_date: true, shop_id: true },
     }),
   ])
 
   const posMap = new Map<number, { count: number; total: number; last: Date }>()
+  const customerShopIds = new Map<number, Set<number>>()
   for (const o of posOrders) {
     const existing = posMap.get(o.customer_id)
     if (existing) {
@@ -69,6 +71,8 @@ export async function FetchCustomerReport(startDate: string, endDate: string): P
     } else {
       posMap.set(o.customer_id, { count: 1, total: Number(o.grand_total), last: o.order_date })
     }
+    if (!customerShopIds.has(o.customer_id)) customerShopIds.set(o.customer_id, new Set())
+    customerShopIds.get(o.customer_id)!.add(o.shop_id)
   }
 
   const tailorMap = new Map<number, { count: number; total: number; last: Date }>()
@@ -81,7 +85,16 @@ export async function FetchCustomerReport(startDate: string, endDate: string): P
     } else {
       tailorMap.set(o.customer_id, { count: 1, total: Number(o.price), last: o.order_date })
     }
+    if (!customerShopIds.has(o.customer_id)) customerShopIds.set(o.customer_id, new Set())
+    customerShopIds.get(o.customer_id)!.add(o.shop_id)
   }
+
+  // Cheap lookup for turning the tracked shop_ids into display names —
+  // fetched regardless of admin level since even a single-shop account
+  // benefits from consistent typing, though the column itself is only
+  // shown to Head Office in the UI.
+  const allShopsForNames = await prisma.tbl_shop.findMany({ select: { shop_id: true, shop_name: true } })
+  const shopNameById = new Map(allShopsForNames.map((s) => [s.shop_id, s.shop_name]))
 
   const rows: CustomerReportRow[] = customers
     .map((c) => {
@@ -105,6 +118,9 @@ export async function FetchCustomerReport(startDate: string, endDate: string): P
         tailor_total_spent: tailor?.total || 0,
         total_spent: (pos?.total || 0) + (tailor?.total || 0),
         last_activity,
+        shops: Array.from(customerShopIds.get(c.customer_id) || [])
+          .map((id) => shopNameById.get(id) || `Shop #${id}`)
+          .join(', '),
       }
     })
     .filter((r) => r.pos_order_count > 0 || r.tailor_order_count > 0)
@@ -134,19 +150,26 @@ export async function FetchCustomerReport(startDate: string, endDate: string): P
     const posShopMap = new Map(posByShop.map((r) => [r.shop_id, r]))
     const tailorShopMap = new Map(tailorByShop.map((r) => [r.shop_id, r]))
 
-    // Distinct customer count per shop (from the customer's own shop_id — private customers only, shared ones aren't attributable to one shop)
-    const customerCountByShop = await prisma.tbl_customer.groupBy({
-      by: ['shop_id'],
-      where: { shop_id: { not: null } },
-      _count: { customer_id: true },
-    })
-    const customerCountMap = new Map(customerCountByShop.map((r) => [r.shop_id, r._count.customer_id]))
+    // Distinct customers per shop, based on who actually had POS or
+    // tailor activity there in this date range — not who privately owns
+    // the customer record. Ownership-based counting showed 0 almost
+    // everywhere, since a shared customer isn't privately owned by any
+    // one franchise even though they clearly shopped there.
+    const customersByShop = new Map<number, Set<number>>()
+    for (const o of posOrders) {
+      if (!customersByShop.has(o.shop_id)) customersByShop.set(o.shop_id, new Set())
+      customersByShop.get(o.shop_id)!.add(o.customer_id)
+    }
+    for (const o of tailorOrders) {
+      if (!customersByShop.has(o.shop_id)) customersByShop.set(o.shop_id, new Set())
+      customersByShop.get(o.shop_id)!.add(o.customer_id)
+    }
 
     byShop = shops.map((s) => ({
       shop_id: s.shop_id,
       shop_name: s.shop_name,
       shop_code: s.shop_code,
-      customer_count: customerCountMap.get(s.shop_id) || 0,
+      customer_count: customersByShop.get(s.shop_id)?.size || 0,
       total_revenue: Number(posShopMap.get(s.shop_id)?._sum.grand_total || 0) + Number(tailorShopMap.get(s.shop_id)?._sum.price || 0),
     }))
   }

@@ -192,6 +192,7 @@ export default function TailorReport() {
                           <tr>
                             <th className="active">Order #</th>
                             <th className="active">Customer</th>
+                            {isSuperAdmin && <th className="active">Franchise</th>}
                             <th className="active">Garment</th>
                             <th className="active">Promised</th>
                             <th className="active">Status</th>
@@ -203,13 +204,14 @@ export default function TailorReport() {
                               <tr key={o.tailor_order_id}>
                                 <td>{o.order_number}</td>
                                 <td>{o.customer_name}<br /><small className="text-muted">{o.phone}</small></td>
+                                {isSuperAdmin && <td style={{ fontSize: 12, color: '#4b5563' }}>{o.shop_name || '—'}</td>}
                                 <td>{o.garment_type}</td>
                                 <td>{o.promised_date ? new Date(o.promised_date).toLocaleDateString() : '—'}</td>
                                 <td><span className={`label ${STATUS_BADGE[o.status]}`}>{o.status_label}</span></td>
                               </tr>
                             ))
                           ) : (
-                            <tr><td colSpan={5} className="text-center"><strong>Nothing due soon.</strong></td></tr>
+                            <tr><td colSpan={isSuperAdmin ? 6 : 5} className="text-center"><strong>Nothing due soon.</strong></td></tr>
                           )}
                         </tbody>
                       </table>
@@ -231,6 +233,7 @@ export default function TailorReport() {
                             <tr>
                               <th className="active">Order #</th>
                               <th className="active">Customer</th>
+                              {isSuperAdmin && <th className="active">Franchise</th>}
                               <th className="active">Garment</th>
                               <th className="active">Promised</th>
                               <th className="active">Days Overdue</th>
@@ -242,6 +245,7 @@ export default function TailorReport() {
                               <tr key={o.tailor_order_id}>
                                 <td>{o.order_number}</td>
                                 <td>{o.customer_name}<br /><small className="text-muted">{o.phone}</small></td>
+                                {isSuperAdmin && <td style={{ fontSize: 12, color: '#4b5563' }}>{o.shop_name || '—'}</td>}
                                 <td>{o.garment_type}</td>
                                 <td>{o.promised_date ? new Date(o.promised_date).toLocaleDateString() : '—'}</td>
                                 <td><span className="label label-danger">{o.days_overdue} day{o.days_overdue === 1 ? '' : 's'}</span></td>
@@ -303,6 +307,7 @@ export default function TailorReport() {
                         <thead>
                           <tr>
                             <th className="active">Customer</th>
+                            {isSuperAdmin && <th className="active">Franchise(s)</th>}
                             <th className="active text-right">Orders</th>
                             <th className="active text-right">Total Spent</th>
                           </tr>
@@ -311,11 +316,12 @@ export default function TailorReport() {
                           {data.topCustomers.length > 0 ? data.topCustomers.map((c) => (
                             <tr key={c.customer_id}>
                               <td>{c.customer_name}<br /><small className="text-muted">{c.phone}</small></td>
+                              {isSuperAdmin && <td style={{ fontSize: 12, color: '#4b5563' }}>{c.shops || '—'}</td>}
                               <td className="text-right">{c.order_count}</td>
                               <td className="text-right">{c.total_spent.toFixed(2)}</td>
                             </tr>
                           )) : (
-                            <tr><td colSpan={3} className="text-center"><strong>No orders in this range.</strong></td></tr>
+                            <tr><td colSpan={isSuperAdmin ? 4 : 3} className="text-center"><strong>No orders in this range.</strong></td></tr>
                           )}
                         </tbody>
                       </table>

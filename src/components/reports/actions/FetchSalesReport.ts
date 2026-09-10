@@ -13,6 +13,7 @@ export interface SalesReportRow {
   discount: number
   grandTotal: number
   profit: number
+  shopName?: string
 }
 
 export default async function FetchSalesReport(
@@ -38,9 +39,11 @@ export default async function FetchSalesReport(
           o.order_id,
           CAST(o.grand_total     AS DOUBLE) AS grand_total,
           CAST(o.discount_amount AS DOUBLE) AS discount_amount,
-          o.order_status
+          o.order_status,
+          s.shop_name
         FROM tbl_invoice i
         JOIN tbl_order o ON o.order_id = i.order_id
+        JOIN tbl_shop s ON s.shop_id = o.shop_id
         WHERE
           i.invoice_date >= ${start}
           AND i.invoice_date <= ${end}
@@ -103,6 +106,7 @@ export default async function FetchSalesReport(
       discount,
       grandTotal,
       profit,
+      shopName: inv.shop_name,
     })
   }
 

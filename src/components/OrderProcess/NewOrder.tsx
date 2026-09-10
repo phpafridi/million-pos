@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import FetchProducts from '../Product/actions/FetchProduct'
 import { FetchCustomerData } from '../Customer/actions/FetchCustomerData'
+import { FindCustomerByCardNumber } from '../Customer/actions/LoyaltyActions'
 import { AddOrder } from '../OrderProcess/actions/AddOrder'
 import { useSession } from 'next-auth/react'
 import { useNotifications } from '../store/useNotifications'
@@ -38,6 +39,9 @@ type Customer = {
   customer_id: number
   customer_name: string
   discount: number
+  is_gold_member?: boolean
+  loyalty_points?: number
+  card_number?: string
 }
 
 type PriceType = 'base' | 'special' | 'tier' | 'custom' | 'batch'
@@ -130,6 +134,7 @@ export default function NewSale() {
   const [customers, setCustomers]       = useState<Customer[]>([])
   const [cart, setCart]                 = useState<CartItem[]>([])
   const [selectedCustomer, setSelectedCustomer] = useState<Customer>({ customer_id: 0, customer_name: 'Walking Client', discount: 0 })
+  const [cardScanInput, setCardScanInput] = useState('')
   const [receiptSnapshot, setReceiptSnapshot] = useState<{
     customer: any
     cart: any[]
@@ -140,9 +145,12 @@ export default function NewSale() {
     changeAmount: number
     orderNo?: number | string
     orderDate?: string | Date
+    loyaltyPointsEarned?: number
+    loyaltyPointsRedeemed?: number
+    loyaltyPointsBalance?: number
   } | null>(null)
   const [pendingPrint, setPendingPrint] = useState(false)
-  const [isGoldClient, setIsGoldClient] = useState(false)
+  const [cardVerified, setCardVerified] = useState(false)
   const [searchTerm, setSearchTerm]     = useState('')
   const [searchResults, setSearchResults] = useState<Product[]>([])
   const [highlightedIdx, setHighlightedIdx] = useState(-1)
@@ -150,6 +158,9 @@ export default function NewSale() {
   const [paidAmount, setPaidAmount]     = useState<number | ''>('')
   const [customDiscount, setCustomDiscount] = useState(0)
   const [isDiscountEnabled, setIsDiscountEnabled] = useState(false)
+  const [pointsToRedeem, setPointsToRedeem] = useState(0)
+  const [redeemValuePerPoint, setRedeemValuePerPoint] = useState(1)
+  const [loyaltyEnabled, setLoyaltyEnabled] = useState(true)
   const [processWithoutPayment, setProcessWithoutPayment] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [saleRef, setSaleRef]           = useState('')
@@ -167,7 +178,7 @@ export default function NewSale() {
 
   const searchRef     = useRef<HTMLInputElement>(null)
   const paidRef       = useRef<HTMLInputElement>(null)
-  const customerRef   = useRef<HTMLSelectElement>(null)
+  const customerRef   = useRef<HTMLInputElement>(null)
   const discountRef   = useRef<HTMLInputElement>(null)
   const submitBtnRef  = useRef<HTMLButtonElement>(null)
   const dropdownRef   = useRef<HTMLDivElement>(null)
@@ -235,17 +246,28 @@ export default function NewSale() {
       })))
     })
     FetchCustomerData(activeShopId).then(res => {
-      const mapped = (res || []).map((c: any) => ({ customer_id: c.customer_id, customer_name: c.customer_name, discount: n(c.discount || '0') }))
+      const mapped = (res || []).map((c: any) => ({ customer_id: c.customer_id, customer_name: c.customer_name, discount: n(c.discount || '0'), is_gold_member: Boolean(c.is_gold_member), loyalty_points: Number(c.loyalty_points || 0) }))
       setCustomers(mapped)
       // Default to the shop's real seeded "walkin" customer (every shop
       // has one) rather than just assuming it's first in the list —
       // this is what fixes the old "customer_id foreign key" crash,
       // since walkin is now always a real row, never a fake id.
       const walkin = mapped.find((c: any) => c.customer_name?.toLowerCase() === 'walkin')
-      if (walkin) setSelectedCustomer(walkin)
-      else if (mapped.length > 0) setSelectedCustomer(mapped[0])
+      if (walkin) {
+        setSelectedCustomer(walkin)
+      } else if (mapped.length > 0) {
+        console.error('No shared "walkin" customer found — falling back to an arbitrary customer. This indicates a data problem; contact Head Office.')
+        toast.error('No default walk-in customer found — please select a customer manually or contact Head Office')
+        setSelectedCustomer(mapped[0])
+      }
     })
     fetchCurrency().then(d => { if (d?.currency) setCurrency(d.currency) })
+    import('@/lib/loyaltyConfig').then(({ getLoyaltyConfig }) => {
+      getLoyaltyConfig().then(cfg => {
+        setRedeemValuePerPoint(cfg.redeemValuePerPoint)
+        setLoyaltyEnabled(cfg.enabled)
+      })
+    })
     searchRef.current?.focus()
   }, [activeShopId])
 
@@ -415,7 +437,12 @@ export default function NewSale() {
 
   const subtotal       = cart.reduce((s, i) => s + i.price * i.qty + i.taxAmount, 0)
   const custDiscount   = selectedCustomer?.discount ?? 0
-  const discountAmt    = Math.min(subtotal * custDiscount / 100 + (isDiscountEnabled ? customDiscount : 0), subtotal)
+
+  useEffect(() => {
+    setPointsToRedeem(0)
+  }, [selectedCustomer?.customer_id])
+  const redeemDiscount = pointsToRedeem * redeemValuePerPoint
+  const discountAmt    = Math.min(subtotal * custDiscount / 100 + (isDiscountEnabled ? customDiscount : 0) + redeemDiscount, subtotal)
   const grandTotal     = subtotal - discountAmt
   const paid           = n(paidAmount)
   const change         = processWithoutPayment ? 0 : paid - grandTotal
@@ -439,8 +466,8 @@ export default function NewSale() {
       if (e.key === 'F2') { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); return }
       // F4 — focus paid
       if (e.key === 'F4') { e.preventDefault(); paidRef.current?.focus(); paidRef.current?.select(); return }
-      // F6 — focus customer
-      if (e.key === 'F6') { e.preventDefault(); setIsGoldClient(true); setTimeout(() => customerRef.current?.focus(), 50); return }
+      // F6 — focus the card scan input
+      if (e.key === 'F6') { e.preventDefault(); customerRef.current?.focus(); return }
       // F8 — toggle discount
       if (e.key === 'F8') { e.preventDefault(); setIsDiscountEnabled(v => !v); setTimeout(() => discountRef.current?.focus(), 50); return }
       // F12 or Ctrl+Enter — submit
@@ -504,6 +531,7 @@ export default function NewSale() {
       const res = await AddOrder({
         sales_person: session?.user?.name || session?.user?.email || 'Staff',
         customer_id: selectedCustomer?.customer_id ?? 0,
+        points_redeemed: pointsToRedeem,
         sale_ref: saleRef || `WalkIn-${Date.now()}`,
         payment_method: paymentMethod as any,
         paid_amount: processWithoutPayment ? 0 : paid,
@@ -518,7 +546,11 @@ export default function NewSale() {
         })),
       })
       if (res.success) {
-        toast.success('✅ Sale completed')
+        toast.success(
+          res.loyalty_points_awarded
+            ? `✅ Sale completed — +${res.loyalty_points_awarded} loyalty points earned`
+            : '✅ Sale completed'
+        )
         setReceiptSnapshot({
           customer: selectedCustomer ?? { customer_name: 'Walking Client' },
           cart: cart.map(c => ({
@@ -537,12 +569,24 @@ export default function NewSale() {
           changeAmount: change,
           orderNo: res.order?.order_number ?? res.order?.order_no,
           orderDate: res.order?.order_date,
+          loyaltyPointsEarned: res.loyalty_points_awarded || 0,
+          loyaltyPointsRedeemed: res.loyalty_points_redeemed || 0,
+          loyaltyPointsBalance: selectedCustomer?.is_gold_member
+            ? (selectedCustomer.loyalty_points || 0) - (res.loyalty_points_redeemed || 0) + (res.loyalty_points_awarded || 0)
+            : undefined,
         })
         setPendingPrint(true)
         clearCart()
         setCustomDiscount(0)
+        setPointsToRedeem(0)
+        setCardVerified(false)
         setPaidAmount('')
-        setIsGoldClient(false)
+        // Explicitly reset to walkin, not just the verification flag —
+        // otherwise a stale verified customer_id could silently carry
+        // over to the next sale even though the display shows "Walking
+        // Client" again.
+        const walkinReset = customers.find((c) => c.customer_name?.toLowerCase() === 'walkin')
+        setSelectedCustomer(walkinReset ?? { customer_id: 0, customer_name: 'Walking Client', discount: 0 })
         setProcessWithoutPayment(false)
         setSaleRef('')
         await refreshLowStock()
@@ -936,39 +980,61 @@ export default function NewSale() {
               <div className="pos-right-section">
                 <div className="pos-section-title">Customer</div>
                 <div className="pos-customer-row">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', color: '#6b7280', fontSize: 12, whiteSpace: 'nowrap' }}>
-                    <input
-                      type="checkbox"
-                      checked={isGoldClient}
-                      onChange={e => {
-                        setIsGoldClient(e.target.checked)
-                        if (!e.target.checked) setSelectedCustomer(customers[0] ?? { customer_id: 0, customer_name: 'Walking Client', discount: 0 })
+                  <div style={{
+                    flex: 1, border: '1px solid #d1d5db', borderRadius: 6, padding: '7px 11px', fontSize: 13,
+                    background: cardVerified ? '#eefbf1' : '#f9fafb', color: cardVerified ? '#1a7a3c' : '#6b7280',
+                  }}>
+                    {cardVerified && selectedCustomer?.customer_id
+                      ? <><i className="fa fa-check-circle" style={{ marginRight: 6 }}></i>{selectedCustomer.customer_name}</>
+                      : 'Walking Client'}
+                  </div>
+                  <input
+                    ref={customerRef}
+                    type="text"
+                    placeholder="Scan member card…"
+                    value={cardScanInput}
+                    onChange={e => setCardScanInput(e.target.value)}
+                    onKeyDown={async e => {
+                      if (e.key !== 'Enter' || !cardScanInput.trim()) return
+                      e.preventDefault()
+                      try {
+                        const found = await FindCustomerByCardNumber(cardScanInput.trim())
+                        if (found) {
+                          setSelectedCustomer({ customer_id: found.customer_id, customer_name: found.customer_name, discount: Number(found.discount) || 0, is_gold_member: found.is_gold_member, loyalty_points: found.loyalty_points, card_number: found.card_number || undefined })
+                          setCardVerified(true)
+                          toast.success(`${found.customer_name} selected${found.is_gold_member ? ` — ${found.loyalty_points} pts` : ''}`)
+                        } else {
+                          toast.error('No customer found for that card')
+                        }
+                      } catch (err: any) {
+                        toast.error(err.message || 'This card could not be used')
+                      }
+                      setCardScanInput('')
+                    }}
+                    className="pos-control"
+                    style={{ width: 180, fontSize: 12 }}
+                  />
+                  {cardVerified && selectedCustomer?.customer_id > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-default"
+                      onClick={() => {
+                        const walkinCustomer = customers.find((c) => c.customer_name?.toLowerCase() === 'walkin')
+                        setSelectedCustomer(walkinCustomer ?? { customer_id: 0, customer_name: 'Walking Client', discount: 0 })
+                        setCardVerified(false)
                       }}
-                      style={{ width: 14, height: 14 }}
-                    />
-                    <span className="pos-gold-badge">GOLD</span>
-                    <span className="pos-kbd">F6</span>
-                  </label>
-                  {isGoldClient ? (
-                    <select
-                      ref={customerRef}
-                      className="pos-control pos-select"
-                      style={{ flex: 1 }}
-                      value={selectedCustomer?.customer_id ?? ''}
-                      onChange={e => setSelectedCustomer(customers.find(c => c.customer_id === Number(e.target.value)) ?? { customer_id: 0, customer_name: 'Walking Client', discount: 0 })}
+                      title="Clear and return to Walking Client"
                     >
-                      {customers.map(c => (
-                        <option key={c.customer_id} value={c.customer_id}>
-                          {c.customer_name}{c.discount ? ` (${c.discount}% off)` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <div style={{ flex: 1, background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: 6, padding: '7px 11px', color: '#6b7280', fontSize: 13 }}>
-                      Walking Client
-                    </div>
+                      <i className="fa fa-times"></i>
+                    </button>
                   )}
                 </div>
+                {cardVerified && selectedCustomer?.card_number && (
+                  <div style={{ marginTop: 4, fontSize: 12, color: '#4f46e5', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <i className="fa fa-id-card"></i>
+                    Card: <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{selectedCustomer.card_number}</span>
+                  </div>
+                )}
               </div>
 
               {/* ── Date + Ref ── */}
@@ -1021,6 +1087,38 @@ export default function NewSale() {
                       />
                     ) : <span style={{ color: '#3a5070' }}>—</span>}
                   </span>
+
+                  {loyaltyEnabled && !cardVerified && selectedCustomer?.is_gold_member && (selectedCustomer?.loyalty_points || 0) > 0 && (
+                    <span className="pos-total-value" style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>
+                      Scan their member card to redeem points — selecting by name alone isn't enough to verify they're actually here.
+                    </span>
+                  )}
+
+                  {loyaltyEnabled && cardVerified && selectedCustomer?.is_gold_member && (selectedCustomer?.loyalty_points || 0) > 0 && (
+                    <>
+                      <span className="pos-total-label">
+                        Redeem Points <span style={{ opacity: 0.6 }}>({selectedCustomer.loyalty_points} avail.)</span>
+                      </span>
+                      <span className="pos-total-value">
+                        <input
+                          type="number"
+                          min={0}
+                          max={Math.min(selectedCustomer.loyalty_points || 0, Math.floor(subtotal / (redeemValuePerPoint || 1)))}
+                          step={1}
+                          className="pos-num-input"
+                          style={{ width: 80 }}
+                          value={pointsToRedeem}
+                          onChange={e => {
+                            const maxRedeemable = Math.min(selectedCustomer.loyalty_points || 0, Math.floor(subtotal / (redeemValuePerPoint || 1)))
+                            setPointsToRedeem(Math.max(0, Math.min(Number(e.target.value) || 0, maxRedeemable)))
+                          }}
+                        />
+                        {pointsToRedeem > 0 && (
+                          <div style={{ fontSize: 10, color: '#27ae60' }}>— {currency} {redeemDiscount.toFixed(2)} off</div>
+                        )}
+                      </span>
+                    </>
+                  )}
 
                   <span className="pos-total-label" style={{ fontWeight: 700, fontSize: 14, marginTop: 6 }}>Grand Total</span>
                   <span className="pos-grand" style={{ marginTop: 6 }}>{currency} {grandTotal.toFixed(2)}</span>
@@ -1282,6 +1380,9 @@ export default function NewSale() {
         orderNo={receiptSnapshot?.orderNo}
         salesPerson={session?.user?.name || session?.user?.email || 'Staff'}
         orderDate={receiptSnapshot?.orderDate}
+        loyaltyPointsEarned={receiptSnapshot?.loyaltyPointsEarned}
+        loyaltyPointsRedeemed={receiptSnapshot?.loyaltyPointsRedeemed}
+        loyaltyPointsBalance={receiptSnapshot?.loyaltyPointsBalance}
       />
     </>
   )

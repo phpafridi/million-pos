@@ -105,6 +105,7 @@ export default function Navigation() {
     'Report',
     '/dashboard/reports/sales-report',
     '/dashboard/reports/customer-report',
+    '/dashboard/reports/loyalty-redemptions',
     '/dashboard/reports/sales-summery-report',
     '/dashboard/reports/purchase-report',
     '/dashboard/reports/stock-report',
@@ -115,7 +116,7 @@ export default function Navigation() {
     '/dashboard/reports/warehouse-report',
     '/dashboard/tailor/report',
     '/dashboard/warehouse/balances',
-    'Settings',
+    '/dashboard/warehouse/grn',
     '/dashboard/settings/business-profile',
     '/dashboard/settings/localisation',
     '/dashboard/settings/manage-tax-rules',
@@ -125,6 +126,7 @@ export default function Navigation() {
     '/dashboard/settings/shops',
     '/dashboard/settings/warehouses',
     '/dashboard/settings/sync-settings',
+    '/dashboard/settings/loyalty-settings',
     '/dashboard/settings/tailor-style-options',
     '/dashboard/settings/notification-settings',
     'Employee Management',
@@ -138,6 +140,7 @@ export default function Navigation() {
     '/dashboard/settings/shops',
     '/dashboard/settings/warehouses',
     '/dashboard/settings/sync-settings',
+    '/dashboard/settings/loyalty-settings',
     '/dashboard/reports/all-shops',
     '/dashboard/reports/stock-comparison',
     '/dashboard/warehouse/balances',
@@ -150,6 +153,7 @@ export default function Navigation() {
   const WAREHOUSE_SHOP_MENUS = new Set<string>([
     '/dashboard/warehouse/add-stock',
     '/dashboard/warehouse/transfers',
+    '/dashboard/warehouse/grn',
     'Warehouse',
   ]);
 
@@ -250,6 +254,9 @@ export default function Navigation() {
           {hasRole('/dashboard/warehouse/transfers') && (
             <NavLink href="/dashboard/warehouse/transfers" icon={<i className="glyphicon glyphicon-th-list"></i>} label="Manage Transfers" />
           )}
+          {hasRole('/dashboard/warehouse/grn') && (
+            <NavLink href="/dashboard/warehouse/grn" icon={<i className="fa fa-file-text-o"></i>} label="Goods Receive Notes" />
+          )}
         </Section>
         </>
       )}
@@ -341,13 +348,16 @@ export default function Navigation() {
           <GroupLabel>Insights</GroupLabel>
           <Section title="Report" icon={<i className="glyphicon glyphicon-signal"></i>} prefix="/dashboard/reports">
 
-          {(hasRole('/dashboard/reports/sales-report') || hasRole('/dashboard/reports/sales-summery-report') || hasRole('/dashboard/reports/purchase-report') || hasRole('/dashboard/reports/customer-report')) && (
-            <Section title="Sales & Purchases" icon={<i className="fa fa-bar-chart"></i>} prefix={["/dashboard/reports/sales-report", "/dashboard/reports/sales-summery-report", "/dashboard/reports/purchase-report", "/dashboard/reports/customer-report"]}>
+          {(hasRole('/dashboard/reports/sales-report') || hasRole('/dashboard/reports/sales-summery-report') || hasRole('/dashboard/reports/purchase-report') || hasRole('/dashboard/reports/customer-report') || hasRole('/dashboard/reports/loyalty-redemptions')) && (
+            <Section title="Sales & Purchases" icon={<i className="fa fa-bar-chart"></i>} prefix={["/dashboard/reports/sales-report", "/dashboard/reports/sales-summery-report", "/dashboard/reports/purchase-report", "/dashboard/reports/customer-report", "/dashboard/reports/loyalty-redemptions"]}>
               {hasRole('/dashboard/reports/sales-report') && (
                 <NavLink href="/dashboard/reports/sales-report" icon={<i className="fa fa-bar-chart"></i>} label="Sales Report" />
               )}
               {hasRole('/dashboard/reports/customer-report') && (
                 <NavLink href="/dashboard/reports/customer-report" icon={<i className="fa fa-users"></i>} label="Customer Report" />
+              )}
+              {hasRole('/dashboard/reports/loyalty-redemptions') && (
+                <NavLink href="/dashboard/reports/loyalty-redemptions" icon={<i className="fa fa-id-card"></i>} label="Loyalty Redemptions" />
               )}
               {hasRole('/dashboard/reports/sales-summery-report') && (
                 <NavLink href="/dashboard/reports/sales-summery-report" icon={<i className="fa fa-circle-o"></i>} label="Sales Summery Report" />
@@ -369,8 +379,8 @@ export default function Navigation() {
             </Section>
           )}
 
-          {(hasRole('/dashboard/reports/all-shops') || hasRole('/dashboard/reports/transfer-report') || hasRole('/dashboard/reports/warehouse-report') || hasRole('/dashboard/warehouse/balances') || hasRole('/dashboard/tailor/report')) && (
-            <Section title="Network" icon={<i className="fa fa-globe"></i>} prefix={["/dashboard/reports/all-shops", "/dashboard/reports/transfer-report", "/dashboard/reports/warehouse-report", "/dashboard/warehouse/balances", "/dashboard/tailor/report"]}>
+          {(hasRole('/dashboard/reports/all-shops') || hasRole('/dashboard/reports/transfer-report') || hasRole('/dashboard/reports/warehouse-report') || hasRole('/dashboard/warehouse/balances') || hasRole('/dashboard/tailor/report') || hasRole('/dashboard/warehouse/grn')) && (
+            <Section title="Network" icon={<i className="fa fa-globe"></i>} prefix={["/dashboard/reports/all-shops", "/dashboard/reports/transfer-report", "/dashboard/reports/warehouse-report", "/dashboard/warehouse/balances", "/dashboard/tailor/report", "/dashboard/warehouse/grn"]}>
               {hasRole('/dashboard/reports/all-shops') && (
                 <NavLink href="/dashboard/reports/all-shops" icon={<i className="fa fa-globe"></i>} label="All Franchises Report" />
               )}
@@ -382,6 +392,9 @@ export default function Navigation() {
               )}
               {hasRole('/dashboard/reports/warehouse-report') && (
                 <NavLink href="/dashboard/reports/warehouse-report" icon={<i className="fa fa-industry"></i>} label="Warehouse Report" />
+              )}
+              {hasRole('/dashboard/warehouse/grn') && (
+                <NavLink href="/dashboard/warehouse/grn" icon={<i className="fa fa-file-text-o"></i>} label="Goods Receive Notes" />
               )}
               {hasRole('/dashboard/warehouse/balances') && (
                 <NavLink href="/dashboard/warehouse/balances" icon={<i className="fa fa-balance-scale"></i>} label="Franchise Balances" />
@@ -426,8 +439,8 @@ export default function Navigation() {
             )}
           </Section>
 
-          {(hasRole('/dashboard/settings/shops') || hasRole('/dashboard/settings/warehouses') || hasRole('/dashboard/settings/sync-settings')) && (
-            <Section title="Network" icon={<i className="fa fa-sitemap"></i>} prefix={["/dashboard/settings/shops", "/dashboard/settings/warehouses", "/dashboard/settings/sync-settings"]}>
+          {(hasRole('/dashboard/settings/shops') || hasRole('/dashboard/settings/warehouses') || hasRole('/dashboard/settings/sync-settings') || hasRole('/dashboard/settings/loyalty-settings')) && (
+            <Section title="Network" icon={<i className="fa fa-sitemap"></i>} prefix={["/dashboard/settings/shops", "/dashboard/settings/warehouses", "/dashboard/settings/sync-settings", "/dashboard/settings/loyalty-settings"]}>
               {hasRole('/dashboard/settings/shops') && (
                 <NavLink href="/dashboard/settings/shops" icon={<i className="glyphicon glyphicon-globe"></i>} label="Manage Franchises" />
               )}
@@ -436,6 +449,9 @@ export default function Navigation() {
               )}
               {hasRole('/dashboard/settings/sync-settings') && (
                 <NavLink href="/dashboard/settings/sync-settings" icon={<i className="fa fa-exchange"></i>} label="Sync Settings" />
+              )}
+              {hasRole('/dashboard/settings/loyalty-settings') && (
+                <NavLink href="/dashboard/settings/loyalty-settings" icon={<i className="fa fa-star"></i>} label="Loyalty Settings" />
               )}
             </Section>
           )}

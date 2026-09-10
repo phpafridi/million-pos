@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { getShopScope, type ShopScope } from '@/lib/getShopScope'
 
-export type SyncDataType = 'products' | 'categories' | 'tax_rules' | 'measurement_units' | 'customers' | 'suppliers'
+export type SyncDataType = 'products' | 'categories' | 'tax_rules' | 'measurement_units' | 'customers' | 'suppliers' | 'tailor_measurements'
 
 /** Whether this data type is currently shared across every franchise. */
 export async function isSynced(dataType: SyncDataType): Promise<boolean> {
@@ -63,4 +63,38 @@ export function assertCanModifyRecord(scope: ShopScope, recordShopId: number | n
   if (scope.shopId !== recordShopId) {
     throw new Error('This record belongs to a different franchise and cannot be modified here')
   }
+}
+
+const MEASUREMENT_FIELDS = [
+  'measurement_length', 'measurement_teera', 'measurement_chest', 'measurement_waist',
+  'measurement_hip', 'measurement_shoulder', 'measurement_sleeve_length', 'measurement_sleeve_round',
+  'measurement_neck', 'measurement_daman', 'measurement_shalwar_length', 'measurement_bottom',
+] as const
+
+/**
+ * Redacts a customer's measurement fields when viewing them from a shop
+ * that isn't the one that actually owns the record, and Head Office has
+ * measurement-sharing turned off — independent of whether basic contact
+ * info (name/phone/email) sharing is on. Lets a franchise look up an
+ * existing customer by phone without necessarily seeing their exact body
+ * measurements, which another franchise may consider more sensitive
+ * than a name and phone number.
+ *
+ * A customer's own shop always sees their own measurements regardless
+ * of this setting — this only affects viewing someone else's customer.
+ */
+export async function redactMeasurementsIfNeeded<T extends { shop_id: number | null }>(
+  customer: T,
+  scope: ShopScope
+): Promise<T> {
+  if (customer.shop_id === scope.shopId) return customer // it's genuinely this shop's own record
+
+  const measurementsShared = await isSynced('tailor_measurements')
+  if (measurementsShared) return customer
+
+  const redacted = { ...customer }
+  for (const field of MEASUREMENT_FIELDS) {
+    if (field in redacted) (redacted as any)[field] = null
+  }
+  return redacted
 }

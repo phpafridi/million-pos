@@ -14,6 +14,7 @@ type Customer = {
   phone: string | null
   address: string | null
   discount: string | null
+  _count?: { tailor_orders: number }
 }
 
 export default function ManageCustomer() {
@@ -141,7 +142,16 @@ export default function ManageCustomer() {
                     currentCustomers.map((customer, index) => (
                       <tr key={customer.customer_code} className="custom-tr text-center">
                         <td>{indexOfFirstItem + index + 1}</td>
-                        <td>{customer.customer_name}</td>
+                        <td>
+                          {customer.customer_name}
+                          {(customer._count?.tailor_orders || 0) > 0 && (
+                            <Link href="/dashboard/tailor/customers" title="Also has tailor order history">
+                              <span className="label label-info" style={{ marginLeft: 6, fontSize: 10, cursor: 'pointer' }}>
+                                <i className="fa fa-scissors"></i> Tailor
+                              </span>
+                            </Link>
+                          )}
+                        </td>
                         <td>{customer.email}</td>
                         <td>{customer.phone}</td>
                         <td>{customer.discount} %</td>

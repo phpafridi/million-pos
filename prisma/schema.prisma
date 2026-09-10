@@ -45,6 +45,7 @@ model tbl_shop {
   tailor_orders     tbl_tailor_order[]
   transfers_sent     tbl_stock_transfer[] @relation("TransferFrom")
   transfers_received tbl_stock_transfer[] @relation("TransferTo")
+  grns                tbl_grn[]
 
   @@map("tbl_shop")
 }
@@ -228,9 +229,11 @@ model tbl_customer {
   address       String @db.Text
   discount      String @db.VarChar(100)
 
-  // Loyalty (gold card / points redemption — foundation for now, UI comes later)
+  // Loyalty (gold card / points redemption)
   is_gold_member Boolean @default(false)
   loyalty_points  Int     @default(0)
+  card_number    String? @unique @db.VarChar(30) // scannable at checkout to select this customer instantly
+  card_active    Boolean @default(true) // separate from membership itself — lets a lost/stolen card be deactivated without losing membership or points
 
   // Tailor measurements — one customer, one set of measurements, shared
   // across every tailor order they place (was previously a separate
@@ -356,6 +359,8 @@ model tbl_order {
   sub_total        Decimal  @db.Decimal(10,2)
   discount         Decimal  @db.Decimal(10,2)
   discount_amount  Decimal  @db.Decimal(10,2)
+  loyalty_points_redeemed  Int     @default(0) // separate from discount_amount — how much of the discount specifically came from a loyalty redemption, not a manual/customer discount
+  loyalty_discount_amount  Decimal @default(0) @db.Decimal(10,2)
   total_tax        Decimal  @db.Decimal(10,2)
   grand_total      Decimal  @db.Decimal(10,2)
   payment_method   String   @db.VarChar(100)
@@ -426,6 +431,7 @@ model tbl_product {
   return_items     tbl_return_item[]
   batches          tbl_purchase_batch[]
   transfer_items   tbl_stock_transfer_item[]
+  grn_items        tbl_grn_item[]
 
   expiration_date         DateTime? @db.Date
   has_expiration          Boolean   @default(false)
@@ -1041,4 +1047,55 @@ model tbl_login_attempt {
   @@index([email, attempted_at])
   @@index([ip_address, attempted_at])
   @@map("tbl_login_attempt")
+}
+
+// Tracks card-scan lookup attempts at checkout, for rate limiting —
+// deliberately does NOT store which card number was attempted (only
+// success/failure + IP), so this log itself never becomes a list of
+// guessed/valid card numbers sitting in the database.
+model tbl_card_scan_attempt {
+  attempt_id   Int      @id @default(autoincrement())
+  ip_address   String   @db.VarChar(64)
+  success      Boolean
+  attempted_at DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([ip_address, attempted_at])
+  @@map("tbl_card_scan_attempt")
+}
+
+// Goods Receive Note — a unified record of every time stock physically
+// arrives at a warehouse, regardless of source (supplier purchase,
+// transfer from another warehouse/franchise, or a manual correction).
+// Head Office can see every GRN network-wide; each warehouse sees its own.
+model tbl_grn {
+  grn_id              Int      @id @default(autoincrement())
+  grn_number          String   @unique @db.VarChar(60)
+  shop_id             Int      // the warehouse receiving stock
+  source_type         String   @db.VarChar(30) // 'supplier_purchase' | 'transfer' | 'manual_adjustment'
+  source_reference    Int?     // purchase_id or transfer_id this GRN was generated from — null for manual adjustments
+  source_description  String   @db.VarChar(255) // e.g. supplier name, "Transfer from Bara Franchise", "Manual Stock Correction"
+  received_by         String   @db.VarChar(100)
+  notes               String?  @db.Text
+  created_at          DateTime @default(now()) @db.Timestamp(0)
+
+  shop  tbl_shop      @relation(fields: [shop_id], references: [shop_id])
+  items tbl_grn_item[]
+
+  @@index([shop_id])
+  @@index([source_type])
+  @@map("tbl_grn")
+}
+
+model tbl_grn_item {
+  grn_item_id Int      @id @default(autoincrement())
+  grn_id      Int
+  product_id  Int
+  quantity    Decimal  @db.Decimal(10,2)
+  unit_cost   Decimal? @db.Decimal(10,2)
+
+  grn     tbl_grn     @relation(fields: [grn_id], references: [grn_id], onDelete: Cascade)
+  product tbl_product @relation(fields: [product_id], references: [product_id])
+
+  @@index([grn_id])
+  @@map("tbl_grn_item")
 }

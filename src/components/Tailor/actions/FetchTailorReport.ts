@@ -13,6 +13,7 @@ export type TailorReportData = {
     promised_date: string | null
     status: string
     status_label: string
+    shop_name?: string
   }[]
   overdue: {
     tailor_order_id: number
@@ -24,6 +25,7 @@ export type TailorReportData = {
     status: string
     status_label: string
     days_overdue: number
+    shop_name?: string
   }[]
   statusCounts: Record<string, number>
   revenue: {
@@ -34,7 +36,7 @@ export type TailorReportData = {
     average_order_value: number
   }
   garmentBreakdown: { garment_type: string; count: number; total_price: number }[]
-  topCustomers: { customer_id: number; customer_name: string; phone: string; order_count: number; total_spent: number }[]
+  topCustomers: { customer_id: number; customer_name: string; phone: string; order_count: number; total_spent: number; shops?: string }[]
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -66,7 +68,7 @@ export async function FetchTailorReport(startDate: string, endDate: string): Pro
         status: { in: ['received', 'in_process', 'ready'] },
         promised_date: { not: null, lte: soon },
       },
-      include: { customer: { select: { customer_name: true, phone: true } } },
+      include: { customer: { select: { customer_name: true, phone: true } }, shop: { select: { shop_name: true } } },
       orderBy: { promised_date: 'asc' },
       take: 50,
     }),
@@ -76,7 +78,7 @@ export async function FetchTailorReport(startDate: string, endDate: string): Pro
         status: { in: ['received', 'in_process', 'ready'] },
         promised_date: { not: null, lt: new Date() },
       },
-      include: { customer: { select: { customer_name: true, phone: true } } },
+      include: { customer: { select: { customer_name: true, phone: true } }, shop: { select: { shop_name: true } } },
       orderBy: { promised_date: 'asc' },
       take: 50,
     }),
@@ -97,7 +99,7 @@ export async function FetchTailorReport(startDate: string, endDate: string): Pro
     }),
     prisma.tbl_tailor_order.findMany({
       where: { ...where, order_date: { gte: start, lte: end }, status: { not: 'cancelled' } },
-      select: { customer_id: true, price: true, customer: { select: { customer_name: true, phone: true } } },
+      select: { customer_id: true, price: true, shop_id: true, customer: { select: { customer_name: true, phone: true } }, shop: { select: { shop_name: true } } },
     }),
   ])
 
@@ -115,23 +117,32 @@ export async function FetchTailorReport(startDate: string, endDate: string): Pro
     }))
     .sort((a, b) => b.total_price - a.total_price)
 
-  const customerTotals = new Map<number, { customer_name: string; phone: string; order_count: number; total_spent: number }>()
+  const customerTotals = new Map<number, { customer_name: string; phone: string; order_count: number; total_spent: number; shopNames: Set<string> }>()
   for (const o of customerOrders) {
     const existing = customerTotals.get(o.customer_id)
     if (existing) {
       existing.order_count += 1
       existing.total_spent += Number(o.price)
+      existing.shopNames.add(o.shop.shop_name)
     } else {
       customerTotals.set(o.customer_id, {
         customer_name: o.customer.customer_name,
         phone: o.customer.phone,
         order_count: 1,
         total_spent: Number(o.price),
+        shopNames: new Set([o.shop.shop_name]),
       })
     }
   }
   const topCustomers = Array.from(customerTotals.entries())
-    .map(([customer_id, v]) => ({ customer_id, ...v }))
+    .map(([customer_id, v]) => ({
+      customer_id,
+      customer_name: v.customer_name,
+      phone: v.phone,
+      order_count: v.order_count,
+      total_spent: v.total_spent,
+      shops: Array.from(v.shopNames).join(', '),
+    }))
     .sort((a, b) => b.total_spent - a.total_spent)
     .slice(0, 10)
 
@@ -147,6 +158,7 @@ export async function FetchTailorReport(startDate: string, endDate: string): Pro
       promised_date: o.promised_date ? o.promised_date.toISOString() : null,
       status: o.status,
       status_label: STATUS_LABELS[o.status] || o.status,
+      shop_name: o.shop.shop_name,
     })),
     overdue: overdueRaw.map((o) => ({
       tailor_order_id: o.tailor_order_id,
@@ -158,6 +170,7 @@ export async function FetchTailorReport(startDate: string, endDate: string): Pro
       status: o.status,
       status_label: STATUS_LABELS[o.status] || o.status,
       days_overdue: o.promised_date ? Math.floor((now - o.promised_date.getTime()) / 86400000) : 0,
+      shop_name: o.shop.shop_name,
     })),
     statusCounts,
     revenue: {

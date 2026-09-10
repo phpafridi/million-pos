@@ -8,6 +8,7 @@ import { FetchTailorOrdersByCustomer, AddOrUpdateTailorCustomer } from '../Tailo
 import FractionInput from '../Tailor/FractionInput'
 import { hasPermission } from '@/lib/clientPermissions'
 import { formatAsFraction } from '@/lib/formatMeasurement'
+import { SetGoldMemberStatus, SetCardNumber, AdjustLoyaltyPoints, SetCardActiveStatus } from './actions/LoyaltyActions'
 
 const FIXED_MEASUREMENT_KEYS = new Set([
   'measurement_length', 'measurement_teera', 'measurement_chest', 'measurement_waist', 'measurement_hip',
@@ -26,6 +27,17 @@ export default function CustomerProfile({ customerId }: { customerId: number }) 
   const savedBy = session?.user?.name || session?.user?.email || 'Staff'
   const canView = hasPermission(session, 'action:view-customer-profile', 'view')
   const canEdit = hasPermission(session, 'action:edit-customer-profile')
+  // Card/membership management is Head Office only, deliberately not
+  // tied to the general edit-customer-profile permission a franchise
+  // employee could be granted — franchises can view loyalty info, only
+  // Head Office can change it.
+  const isSuperAdmin = Boolean((session?.user as any)?.is_super_admin)
+  const [savingLoyalty, setSavingLoyalty] = useState(false)
+  const [editingCardNumber, setEditingCardNumber] = useState(false)
+  const [cardNumberInput, setCardNumberInput] = useState('')
+  const [showAdjustPoints, setShowAdjustPoints] = useState(false)
+  const [adjustAmount, setAdjustAmount] = useState('')
+  const [adjustReason, setAdjustReason] = useState('')
 
   const [loading, setLoading] = useState(true)
   const [customer, setCustomer] = useState<any>(null)
@@ -166,13 +178,158 @@ export default function CustomerProfile({ customerId }: { customerId: number }) 
                   <h3 className="box-title">{customer.customer_name}</h3>
                 </div>
                 <div className="box-background" style={{ padding: 18 }}>
-                  {customer.is_gold_member && (
-                    <div style={{ marginBottom: 12, textAlign: 'center' }}>
-                      <span style={{ background: '#b8860b', color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, letterSpacing: 1 }}>
-                        ★ GOLD MEMBER
+                  <div style={{ border: '1px solid #f0e0c0', background: '#fffdf7', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: customer.is_gold_member ? 10 : 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#8a6d00' }}>
+                        {customer.is_gold_member ? '★ GOLD MEMBER' : 'Loyalty Membership'}
                       </span>
+                      {isSuperAdmin && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: savingLoyalty ? 'wait' : 'pointer', fontSize: 12 }}>
+                          <input
+                            type="checkbox"
+                            checked={customer.is_gold_member}
+                            disabled={savingLoyalty}
+                            onChange={async (e) => {
+                              setSavingLoyalty(true)
+                              try {
+                                const res = await SetGoldMemberStatus(customer.customer_id, e.target.checked)
+                                setCustomer((prev: any) => ({ ...prev, is_gold_member: e.target.checked, card_number: res.card_number ?? prev.card_number }))
+                                toast.success(e.target.checked ? 'Now a gold member' : 'Membership removed')
+                              } catch (err: any) {
+                                toast.error(err.message || 'Failed to update membership')
+                              } finally {
+                                setSavingLoyalty(false)
+                              }
+                            }}
+                          />
+                          Member
+                        </label>
+                      )}
                     </div>
-                  )}
+
+                    {customer.is_gold_member && (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, color: '#8a90a3' }}>Card Number</span>
+                          {editingCardNumber ? (
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <input
+                                className="form-control input-sm"
+                                style={{ width: 130, fontSize: 12 }}
+                                value={cardNumberInput}
+                                onChange={(e) => setCardNumberInput(e.target.value)}
+                                autoFocus
+                              />
+                              <button
+                                className="btn btn-xs btn-success"
+                                onClick={async () => {
+                                  try {
+                                    await SetCardNumber(customer.customer_id, cardNumberInput)
+                                    setCustomer((prev: any) => ({ ...prev, card_number: cardNumberInput.trim() }))
+                                    setEditingCardNumber(false)
+                                    toast.success('Card number updated')
+                                  } catch (err: any) {
+                                    toast.error(err.message || 'Failed to update card number')
+                                  }
+                                }}
+                              >Save</button>
+                            </div>
+                          ) : (
+                            <span
+                              style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, cursor: isSuperAdmin ? 'pointer' : 'default' }}
+                              title={isSuperAdmin ? 'Click to edit — e.g. to match a pre-printed physical card' : ''}
+                              onClick={() => { if (isSuperAdmin) { setCardNumberInput(customer.card_number || ''); setEditingCardNumber(true) } }}
+                            >
+                              {customer.card_number || '—'} {isSuperAdmin && <i className="fa fa-pencil" style={{ fontSize: 10, opacity: 0.5, marginLeft: 4 }} />}
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, color: '#8a90a3' }}>Card Status</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{
+                              fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                              background: customer.card_active !== false ? '#e6f7ec' : '#fdecea',
+                              color: customer.card_active !== false ? '#1a7a3c' : '#a83228',
+                            }}>
+                              {customer.card_active !== false ? 'ACTIVE' : 'DEACTIVATED'}
+                            </span>
+                            {isSuperAdmin && (
+                              <button
+                                className="btn btn-xs btn-default"
+                                onClick={async () => {
+                                  const nextActive = !(customer.card_active !== false)
+                                  try {
+                                    await SetCardActiveStatus(customer.customer_id, nextActive)
+                                    setCustomer((prev: any) => ({ ...prev, card_active: nextActive }))
+                                    toast.success(nextActive ? 'Card reactivated' : 'Card deactivated — this customer keeps their membership and points, the physical/scanned card just won\'t work until reactivated')
+                                  } catch (err: any) {
+                                    toast.error(err.message || 'Failed to update card status')
+                                  }
+                                }}
+                              >
+                                {customer.card_active !== false ? 'Deactivate' : 'Reactivate'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, color: '#8a90a3' }}>Points Balance</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: '#b8860b' }}>{customer.loyalty_points} pts</span>
+                            {isSuperAdmin && (
+                              <button className="btn btn-xs btn-default" onClick={() => setShowAdjustPoints(true)}>
+                                <i className="fa fa-sliders"></i>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {showAdjustPoints && (
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #e0d0a0' }}>
+                            <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                              <input
+                                type="number"
+                                className="form-control input-sm"
+                                placeholder="+10 or -5"
+                                style={{ width: 80, fontSize: 12 }}
+                                value={adjustAmount}
+                                onChange={(e) => setAdjustAmount(e.target.value)}
+                              />
+                              <input
+                                className="form-control input-sm"
+                                placeholder="Reason"
+                                style={{ flex: 1, fontSize: 12 }}
+                                value={adjustReason}
+                                onChange={(e) => setAdjustReason(e.target.value)}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                className="btn btn-xs bg-navy"
+                                onClick={async () => {
+                                  const delta = Number(adjustAmount)
+                                  if (!delta) { toast.error('Enter a nonzero amount'); return }
+                                  try {
+                                    const res = await AdjustLoyaltyPoints(customer.customer_id, delta, adjustReason)
+                                    setCustomer((prev: any) => ({ ...prev, loyalty_points: res.new_balance }))
+                                    setShowAdjustPoints(false)
+                                    setAdjustAmount(''); setAdjustReason('')
+                                    toast.success('Points updated')
+                                  } catch (err: any) {
+                                    toast.error(err.message || 'Failed to adjust points')
+                                  }
+                                }}
+                              >Apply</button>
+                              <button className="btn btn-xs btn-default" onClick={() => setShowAdjustPoints(false)}>Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16, textAlign: 'center' }}>
                     <div>
                       <div style={{ fontSize: 20, fontWeight: 700, color: '#1a9c5c' }}>{purchaseHistory.length}</div>
@@ -187,12 +344,6 @@ export default function CustomerProfile({ customerId }: { customerId: number }) 
                     <div style={{ fontSize: 18, fontWeight: 700 }}>Rs {totalSpent.toFixed(2)}</div>
                     <div style={{ fontSize: 11, color: '#8a90a3', textTransform: 'uppercase' }}>Total Spent (Completed)</div>
                   </div>
-                  {customer.loyalty_points > 0 && (
-                    <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: '#b8860b' }}>{customer.loyalty_points} pts</div>
-                      <div style={{ fontSize: 11, color: '#8a90a3', textTransform: 'uppercase' }}>Loyalty Points</div>
-                    </div>
-                  )}
 
                   <hr />
 

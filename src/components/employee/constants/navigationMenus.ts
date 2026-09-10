@@ -111,6 +111,7 @@ export const navigationMenus: NavItem[] = [
     children: [
       { title: 'Sales Report', path: '/dashboard/reports/sales-report' },
       { title: 'Customer Report', path: '/dashboard/reports/customer-report' },
+      { title: 'Loyalty Redemptions', path: '/dashboard/reports/loyalty-redemptions' },
       { title: 'Sales Summery Report', path: '/dashboard/reports/sales-summery-report' },
       { title: 'Purchase Report', path: '/dashboard/reports/purchase-report' },
       { title: 'Stock Report', path: '/dashboard/reports/stock-report' },

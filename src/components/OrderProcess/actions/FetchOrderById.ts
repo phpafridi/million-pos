@@ -19,6 +19,8 @@ export type OrderWithDetails = {
   sub_total: number
   discount: number
   discount_amount: number
+  loyalty_points_redeemed: number
+  loyalty_discount_amount: number
   payment_method: string
   grand_total: number
   order_status: number
@@ -81,6 +83,8 @@ export default async function FetchOrderById(orderId: number): Promise<OrderWith
       sub_total: Number(order.sub_total),
       discount: Number(order.discount),
       discount_amount: Number(order.discount_amount),
+      loyalty_points_redeemed: order.loyalty_points_redeemed,
+      loyalty_discount_amount: Number(order.loyalty_discount_amount),
       payment_method: order.payment_method,
       grand_total: Number(order.grand_total), // Convert Decimal to number
       order_status: order.order_status,

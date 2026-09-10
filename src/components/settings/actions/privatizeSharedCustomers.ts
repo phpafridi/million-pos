@@ -29,7 +29,7 @@ export async function privatizeSharedCustomers(): Promise<PrivatizeResult> {
   }
 
   const sharedCustomers = await prisma.tbl_customer.findMany({
-    where: { shop_id: null },
+    where: { shop_id: null, NOT: { customer_name: 'walkin', email: 'nil@gmail.com' } },
     select: { customer_id: true },
   })
 

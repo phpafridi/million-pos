@@ -2,14 +2,16 @@
 
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
-import { sharedOrOwnWhere } from '@/lib/syncSettings'
+import { sharedOrOwnWhere, redactMeasurementsIfNeeded } from '@/lib/syncSettings'
 
 export async function FetchCustomerProfile(customer_id: number) {
   const scope = await getShopScope()
-  const customer = await prisma.tbl_customer.findFirst({
+  const customerRaw = await prisma.tbl_customer.findFirst({
     where: { customer_id, ...sharedOrOwnWhere(scope) },
   })
-  if (!customer) return null
+  if (!customerRaw) return null
+
+  const customer = await redactMeasurementsIfNeeded(customerRaw, scope)
 
   return {
     ...customer,

@@ -60,3 +60,18 @@ export async function nextTailorOrderNumber(shop_id: number): Promise<string> {
   const lastNum = last?.order_number ? parseInt(last.order_number.replace(numberPrefix, ''), 10) || 0 : 0
   return `${numberPrefix}${String(lastNum + 1).padStart(4, '0')}`
 }
+
+/** e.g. "MLN-2-GRN-0001" — Goods Receive Notes use the same brand-prefixed scheme. */
+export async function nextGrnNumber(shop_id: number): Promise<string> {
+  const prefix = await getDocumentPrefix()
+  const numberPrefix = `${prefix}-${shop_id}-GRN-`
+
+  const last = await prisma.tbl_grn.findFirst({
+    where: { shop_id, grn_number: { startsWith: numberPrefix } },
+    orderBy: { grn_id: 'desc' },
+    select: { grn_number: true },
+  })
+
+  const lastNum = last?.grn_number ? parseInt(last.grn_number.replace(numberPrefix, ''), 10) || 0 : 0
+  return `${numberPrefix}${String(lastNum + 1).padStart(4, '0')}`
+}

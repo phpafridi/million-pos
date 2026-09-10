@@ -449,5 +449,17 @@ export async function LogDamageReturnReceipt(transfer_id: number, loggedBy: stri
     shopIdOverride: transfer.to_shop_id,
   })
 
+  const fromShop = await prisma.tbl_shop.findUnique({ where: { shop_id: transfer.from_shop_id }, select: { shop_name: true } })
+  const { createGrn } = await import('@/lib/grn')
+  await createGrn({
+    shop_id: transfer.to_shop_id,
+    source_type: 'transfer',
+    source_reference: transfer_id,
+    source_description: `Damage return from ${fromShop?.shop_name || 'franchise'} (transfer ${transfer.transfer_number})`,
+    received_by: loggedBy,
+    notes: 'Items received as damaged — logged to damage inventory, not sellable stock',
+    items: transfer.items.map((i) => ({ product_id: i.product_id, quantity: Number(i.quantity) })),
+  })
+
   return { success: true, count: created.length }
 }

@@ -51,7 +51,12 @@ export default function TailorCustomerList() {
         <section className="content">
           <div className="box box-primary">
             <div className="box-header box-header-background with-border d-flex justify-between items-center">
-              <h3 className="box-title">Tailor Customers</h3>
+              <div>
+                <h3 className="box-title">Tailor Customers</h3>
+                <p className="text-muted" style={{ fontSize: 12, margin: '2px 0 0' }}>
+                  Same customer database as Manage Customer — just filtered to only those with a tailor order or measurements on file.
+                </p>
+              </div>
               <input
                 type="text"
                 placeholder="Search by name, phone, or email…"

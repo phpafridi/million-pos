@@ -6,6 +6,7 @@ import { Br, Cut, Line, Printer, Text, Row, render, Image } from "react-thermal-
 import { getCompanyLogo, getCompanyName, getCompanyAddress, getCompanyPhone } from '../OrderProcess/actions/FetchCompanyDetails'
 // @ts-ignore
 import qz from "qz-tray"
+import { toast } from "sonner"
 
 type CartItem = {
   product_name: string
@@ -33,6 +34,9 @@ type PrintReceiptProps = {
   orderNo?: number | string
   orderDate?: string | Date
   salesPerson?: string
+  loyaltyPointsEarned?: number
+  loyaltyPointsRedeemed?: number
+  loyaltyPointsBalance?: number
 }
 
 type PrinterLayout = {
@@ -79,6 +83,9 @@ export default function PrintReceipt({
   orderNo,
   orderDate,
   salesPerson,
+  loyaltyPointsEarned,
+  loyaltyPointsRedeemed,
+  loyaltyPointsBalance,
 }: PrintReceiptProps) {
   const [currency, setCurrency] = useState<string>("")
   const [companyLogo, setCompanyLogo] = useState<string>("")
@@ -86,6 +93,7 @@ export default function PrintReceipt({
   const [companyAddress, setCompanyAddress] = useState<string>("")
   const [companyPhone, setCompanyPhone] = useState<string>("")
   const [resolvedPrinterName, setResolvedPrinterName] = useState<string>(printerName || "POS-80-Series")
+  const settingsReadyRef = React.useRef(false)
   const [layout, setLayout] = useState<PrinterLayout>(defaultLayout)
   const [paperWidthMm, setPaperWidthMm] = useState<number>(80)
 
@@ -165,12 +173,27 @@ export default function PrintReceipt({
         }
       } catch (err) {
         console.error("Failed to load printer settings:", err)
+      } finally {
+        settingsReadyRef.current = true
       }
     }
     loadPrinterSettings()
   }, [printerName])
 
   const printReceipt = async () => {
+    // Wait for the printer settings fetch to actually finish before
+    // proceeding — without this, a print triggered very soon after mount
+    // (like tailor orders, which auto-print immediately on creation)
+    // could fire before resolvedPrinterName had been updated from its
+    // hardcoded default, silently trying to print to a printer name
+    // that doesn't match what's actually configured. Capped at 3s so a
+    // failed settings fetch doesn't block printing forever — falls back
+    // to the default name instead.
+    const waitStart = Date.now()
+    while (!settingsReadyRef.current && Date.now() - waitStart < 3000) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+
     const charsPerLine = paperWidthMm >= 80 ? 42 : 32
     // The fontSize setting existed in printer config but was never actually
     // applied anywhere in the render below — wire it up for real now.
@@ -321,6 +344,17 @@ export default function PrintReceipt({
         )}
         <Row left="Grand Total" right={`${currency}${grandTotal.toFixed(2)}`} />
         <Line />
+
+        {(loyaltyPointsEarned || loyaltyPointsRedeemed) ? (
+          <>
+            <Br />
+            {loyaltyPointsRedeemed ? <Row left="Points Redeemed" right={`-${loyaltyPointsRedeemed}`} /> : null}
+            {loyaltyPointsEarned ? <Row left="Points Earned" right={`+${loyaltyPointsEarned}`} /> : null}
+            {loyaltyPointsBalance !== undefined ? <Row left="Points Balance" right={String(loyaltyPointsBalance)} /> : null}
+            <Line />
+          </>
+        ) : null}
+
         <Br />
         <Text align="center" size={largeText ? { width: 2, height: 2 } : undefined}>{layout.footerText}</Text>
         {layout.showBarcode && orderNo !== undefined && (
@@ -343,8 +377,16 @@ export default function PrintReceipt({
         { type: "raw", format: "base64", data: base64Data }
       ])
       console.log("Print successful")
-    } catch (err) {
+    } catch (err: any) {
       console.error("Printing failed", err)
+      const msg = String(err?.message || err || '')
+      if (msg.toLowerCase().includes('unable to establish connection') || msg.toLowerCase().includes('websocket')) {
+        toast.error('Cannot reach QZ Tray — make sure it\'s installed and running on this computer.')
+      } else if (msg.toLowerCase().includes('printer') && (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('undefined'))) {
+        toast.error(`Printer "${resolvedPrinterName}" not found — check the printer name in Printer Settings matches exactly what's registered on this computer.`)
+      } else {
+        toast.error(`Print failed: ${msg || 'unknown error'}`)
+      }
     } finally {
       qz.websocket.disconnect()
     }

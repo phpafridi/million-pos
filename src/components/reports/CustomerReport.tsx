@@ -142,6 +142,7 @@ export default function CustomerReport() {
                     <thead>
                       <tr>
                         <th className="active">Customer</th>
+                        {isSuperAdmin && <th className="active">Franchise(s)</th>}
                         <th className="active text-right">POS Orders</th>
                         <th className="active text-right">POS Spent</th>
                         <th className="active text-right">Tailor Orders</th>
@@ -158,6 +159,7 @@ export default function CustomerReport() {
                             {c.is_gold_member && <span className="label" style={{ marginLeft: 6, background: '#b8860b', color: '#fff', fontSize: 10 }}>★ GOLD</span>}
                             <br /><small className="text-muted">{c.phone}</small>
                           </td>
+                          {isSuperAdmin && <td style={{ fontSize: 12, color: '#4b5563' }}>{c.shops || '—'}</td>}
                           <td className="text-right">{c.pos_order_count}</td>
                           <td className="text-right">{c.pos_total_spent.toFixed(2)}</td>
                           <td className="text-right">{c.tailor_order_count}</td>
@@ -166,7 +168,7 @@ export default function CustomerReport() {
                           <td>{c.last_activity ? new Date(c.last_activity).toLocaleDateString() : '—'}</td>
                         </tr>
                       )) : (
-                        <tr><td colSpan={7} className="text-center"><strong>No customer activity in this range.</strong></td></tr>
+                        <tr><td colSpan={isSuperAdmin ? 8 : 7} className="text-center"><strong>No customer activity in this range.</strong></td></tr>
                       )}
                     </tbody>
                   </table>

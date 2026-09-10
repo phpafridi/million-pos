@@ -17,6 +17,7 @@ export interface PurchaseReportRow {
     total: number
   }[]
   grandTotal: number
+  shopName?: string
 }
 
 export default async function FetchPurchaseReport(
@@ -40,6 +41,7 @@ export default async function FetchPurchaseReport(
       },
       include: {
         supplier: true,
+        shop: { select: { shop_name: true } },
         details: {
           include: {
             product: true,
@@ -78,6 +80,7 @@ export default async function FetchPurchaseReport(
         }
       }),
       grandTotal: Number(p.grand_total),  // Convert to number
+      shopName: p.shop?.shop_name,
     }))
   } catch (error) {
     console.error('Error fetching purchase report:', error)

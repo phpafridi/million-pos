@@ -1,21 +1,12 @@
 'use client'
 import React, { useEffect, useState } from 'react'
-import FetchProduct from './actions/FetchProducts'
+import FetchProduct, { ProductSummary } from './actions/FetchProducts'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import StockReportPDF from './StockReportPDF'
 import { GetBusinessProfile } from '../settings/actions/GetBusinessProfile'
 import { fetchCurrency } from '../settings/actions/fetchCurrency'
 
-type Product = {
-  id: number
-  sku: string
-  name: string
-  cost: number
-  qty: number
-  stockValue: number
-  measurement_units?: string
-  packet_size: number
-}
+type Product = ProductSummary
 
 type StockFilter = 'all' | 'in_stock' | 'low_stock' | 'out_of_stock'
 
@@ -192,7 +183,17 @@ export default function StockReport() {
                             <td><span style={{ fontFamily: 'monospace', fontSize: 11, background: '#eef2ff', padding: '1px 6px', borderRadius: 3, color: '#4338ca' }}>{p.sku}</span></td>
                             <td style={{ textAlign: 'left', fontWeight: 500 }}>{p.name}</td>
                             <td>{currency} {fmt(p.cost)}</td>
-                            <td style={{ fontWeight: 700 }}>{displayQty}</td>
+                            <td style={{ fontWeight: 700 }}>
+                              {displayQty}
+                              {p.byShop && p.byShop.length > 0 && (
+                                <span
+                                  title={p.byShop.map(s => `${s.shop_name}: ${s.qty}`).join('\n')}
+                                  style={{ marginLeft: 5, fontSize: 10, color: '#6366f1', cursor: 'help' }}
+                                >
+                                  <i className="fa fa-info-circle"></i> {p.byShop.length} shop{p.byShop.length !== 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </td>
                             <td style={{ color: '#6b7280', fontSize: 12 }}>{displayUnit}</td>
                             <td>
                               <span className="status-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>

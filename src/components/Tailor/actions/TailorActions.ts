@@ -3,7 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import { getShopScope, scopeShopIdForWrite, scopeWhere } from '@/lib/getShopScope'
 import { logActivity } from '@/lib/auditLog'
-import { sharedOrOwnWhere, shopIdForNewRecord } from '@/lib/syncSettings'
+import { sharedOrOwnWhere, shopIdForNewRecord, isSynced } from '@/lib/syncSettings'
 import { notifyTailorStatusChange } from '@/lib/notifications'
 import { nextTailorOrderNumber } from '@/lib/documentNumbers'
 
@@ -45,22 +45,30 @@ export async function FetchTailorCustomers(search?: string) {
     where,
     orderBy: { customer_id: 'desc' },
   })
-  return customers.map((c) => ({
+
+  // Checked once, not per-customer — measurement sharing is a single
+  // network-wide policy, not something that varies row to row.
+  const measurementsShared = await isSynced('tailor_measurements')
+
+  return customers.map((c) => {
+    const ownRecord = c.shop_id === scope.shopId
+    const redact = !ownRecord && !measurementsShared
+    return {
     ...c,
     tailor_customer_id: c.customer_id, // kept for the UI's existing field name
-    measurement_length: c.measurement_length ? Number(c.measurement_length) : null,
-    measurement_teera: c.measurement_teera ? Number(c.measurement_teera) : null,
-    measurement_chest: c.measurement_chest ? Number(c.measurement_chest) : null,
-    measurement_waist: c.measurement_waist ? Number(c.measurement_waist) : null,
-    measurement_hip: c.measurement_hip ? Number(c.measurement_hip) : null,
-    measurement_shoulder: c.measurement_shoulder ? Number(c.measurement_shoulder) : null,
-    measurement_sleeve_length: c.measurement_sleeve_length ? Number(c.measurement_sleeve_length) : null,
-    measurement_sleeve_round: c.measurement_sleeve_round ? Number(c.measurement_sleeve_round) : null,
-    measurement_neck: c.measurement_neck ? Number(c.measurement_neck) : null,
-    measurement_daman: c.measurement_daman ? Number(c.measurement_daman) : null,
-    measurement_shalwar_length: c.measurement_shalwar_length ? Number(c.measurement_shalwar_length) : null,
-    measurement_bottom: c.measurement_bottom ? Number(c.measurement_bottom) : null,
-  }))
+    measurement_length: redact ? null : (c.measurement_length ? Number(c.measurement_length) : null),
+    measurement_teera: redact ? null : (c.measurement_teera ? Number(c.measurement_teera) : null),
+    measurement_chest: redact ? null : (c.measurement_chest ? Number(c.measurement_chest) : null),
+    measurement_waist: redact ? null : (c.measurement_waist ? Number(c.measurement_waist) : null),
+    measurement_hip: redact ? null : (c.measurement_hip ? Number(c.measurement_hip) : null),
+    measurement_shoulder: redact ? null : (c.measurement_shoulder ? Number(c.measurement_shoulder) : null),
+    measurement_sleeve_length: redact ? null : (c.measurement_sleeve_length ? Number(c.measurement_sleeve_length) : null),
+    measurement_sleeve_round: redact ? null : (c.measurement_sleeve_round ? Number(c.measurement_sleeve_round) : null),
+    measurement_neck: redact ? null : (c.measurement_neck ? Number(c.measurement_neck) : null),
+    measurement_daman: redact ? null : (c.measurement_daman ? Number(c.measurement_daman) : null),
+    measurement_shalwar_length: redact ? null : (c.measurement_shalwar_length ? Number(c.measurement_shalwar_length) : null),
+    measurement_bottom: redact ? null : (c.measurement_bottom ? Number(c.measurement_bottom) : null),
+  }})
 }
 
 export async function AddOrUpdateTailorCustomer(
@@ -249,7 +257,20 @@ export async function AddTailorOrder(data: {
     shopIdOverride: shop_id,
   })
 
-  return order
+  // Award loyalty points on the advance actually collected — same rule
+  // as POS, only real money paid earns points, not the full order value.
+  let loyaltyAwarded = 0
+  if (data.advance_paid && data.advance_paid > 0) {
+    try {
+      const { awardLoyaltyPoints } = await import('@/lib/loyalty')
+      const result = await awardLoyaltyPoints(data.tailor_customer_id, data.advance_paid)
+      loyaltyAwarded = result.awarded
+    } catch (err) {
+      console.error('Failed to award loyalty points for tailor order:', err)
+    }
+  }
+
+  return { ...order, loyalty_points_awarded: loyaltyAwarded }
 }
 
 export async function FetchTailorOrders(filters?: { status?: string; search?: string }) {
@@ -372,7 +393,16 @@ export async function RecordTailorPayment(data: {
     description: `Payment of ${data.amount.toFixed(2)} recorded for tailor order ${existing.order_number}`,
   })
 
-  return { ...updated, price: Number(updated.price), advance_paid: Number(updated.advance_paid) }
+  let loyaltyAwarded = 0
+  try {
+    const { awardLoyaltyPoints } = await import('@/lib/loyalty')
+    const result = await awardLoyaltyPoints(existing.customer_id, data.amount)
+    loyaltyAwarded = result.awarded
+  } catch (err) {
+    console.error('Failed to award loyalty points for tailor payment:', err)
+  }
+
+  return { ...updated, price: Number(updated.price), advance_paid: Number(updated.advance_paid), loyalty_points_awarded: loyaltyAwarded }
 }
 
 export async function UpdateTailorOrderStatus(data: {

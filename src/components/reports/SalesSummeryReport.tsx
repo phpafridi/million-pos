@@ -1,5 +1,6 @@
 'use client'
 import React, { useState } from 'react'
+import { useSession } from 'next-auth/react'
 import type { SalesReportRow } from './actions/FetchSalesReport'
 import FetchSalesReport from './actions/FetchSalesSummary'
 import { PDFDownloadLink } from '@react-pdf/renderer'
@@ -8,6 +9,8 @@ import { GetBusinessProfile } from '../settings/actions/GetBusinessProfile'
 import { fetchCurrency } from '../settings/actions/fetchCurrency'
 
 export default function SalesSummeryReport() {
+  const { data: session } = useSession()
+  const isSuperAdmin = Boolean((session?.user as any)?.is_super_admin)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate]     = useState('')
   const [report, setReport]       = useState<SalesReportRow[]>([])
@@ -156,7 +159,7 @@ export default function SalesSummeryReport() {
               <div className="rpt-table-wrap">
                 <table className="rpt-table">
                   <thead>
-                    <tr><th>#</th><th>Invoice No</th><th>Date</th><th>Buying Cost</th><th>Selling</th><th>Tax</th><th>Discount</th><th>Grand Total</th><th>Profit</th></tr>
+                    <tr><th>#</th><th>Invoice No</th><th>Date</th>{isSuperAdmin && <th>Franchise</th>}<th>Buying Cost</th><th>Selling</th><th>Tax</th><th>Discount</th><th>Grand Total</th><th>Profit</th></tr>
                   </thead>
                   <tbody>
                     {report.map((row, idx) => (
@@ -164,6 +167,7 @@ export default function SalesSummeryReport() {
                         <td style={{ color: '#9ca3af', fontSize: 11 }}>{idx + 1}</td>
                         <td><span className="inv-badge">{row.invoiceNo ?? '—'}</span></td>
                         <td>{new Date(row.invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                        {isSuperAdmin && <td style={{ fontSize: 12, color: '#4b5563' }}>{row.shopName || '—'}</td>}
                         <td>{row.buyingCost.toFixed(2)}</td>
                         <td>{row.sellingCost.toFixed(2)}</td>
                         <td>{row.tax.toFixed(2)}</td>

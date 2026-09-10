@@ -77,6 +77,33 @@ export default function ActivityLog() {
               <div className="box box-primary">
                 <div className="box-header box-header-background with-border text-center">
                   <h3 className="box-title">Filters</h3>
+                  {isSuperAdmin && (
+                    <button
+                      className="btn btn-danger btn-xs"
+                      style={{ float: 'right' }}
+                      onClick={async () => {
+                        const cutoffDays = prompt('Clear logs older than how many days? Leave blank to clear EVERYTHING permanently.')
+                        if (cutoffDays === null) return // cancelled
+                        const olderThanDate = cutoffDays.trim()
+                          ? new Date(Date.now() - Number(cutoffDays) * 86400000).toISOString()
+                          : undefined
+                        const confirmMsg = olderThanDate
+                          ? `Permanently delete all activity log entries older than ${cutoffDays} days? This cannot be undone.`
+                          : 'Permanently delete the ENTIRE activity log — every entry, from every franchise? This cannot be undone.'
+                        if (!confirm(confirmMsg)) return
+                        try {
+                          const { ClearActivityLog } = await import('./actions/FetchActivityLog')
+                          const res = await ClearActivityLog(olderThanDate)
+                          alert(`${res.deleted} log entries deleted.`)
+                          window.location.reload()
+                        } catch (err: any) {
+                          alert(err.message || 'Failed to clear logs')
+                        }
+                      }}
+                    >
+                      <i className="fa fa-trash"></i> Clear Logs
+                    </button>
+                  )}
                 </div>
                 <div className="box-background" style={{ padding: 16 }}>
                   <div className="row">

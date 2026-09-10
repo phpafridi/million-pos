@@ -3,6 +3,8 @@
 import { prisma } from '@/lib/prisma'
 import { getShopScope, scopeShopIdForWrite, scopeWhere } from '@/lib/getShopScope'
 import { logActivity } from '@/lib/auditLog'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
 export type BatchItem = {
   product_id: number
@@ -208,6 +210,22 @@ export async function SaveBatchPurchase(data: BatchPurchasePayload) {
       description: `Purchase recorded — ${data.cart.length} item(s), ref: ${data.purchase_ref || 'n/a'}, supplier #${data.supplier_id}`,
       shopIdOverride: shopId,
     })
+
+    const targetShop = await prisma.tbl_shop.findUnique({ where: { shop_id: shopId }, select: { is_warehouse: true } })
+    if (targetShop?.is_warehouse) {
+      const session = await getServerSession(authOptions)
+      const receivedBy = session?.user?.name || session?.user?.email || 'Unknown'
+      const { createGrn } = await import('@/lib/grn')
+      await createGrn({
+        shop_id: shopId,
+        source_type: 'supplier_purchase',
+        source_reference: purchaseId,
+        source_description: `Supplier: ${supplier.supplier_name}`,
+        received_by: receivedBy,
+        notes: data.purchase_ref ? `Purchase ref: ${data.purchase_ref}` : undefined,
+        items: data.cart.map((i) => ({ product_id: i.product_id, quantity: i.qty, unit_cost: i.buying_price })),
+      })
+    }
 
     return {
       success: true,

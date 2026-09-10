@@ -15,7 +15,8 @@ const DESCRIPTIONS: Record<string, string> = {
   categories: 'When ON, categories and sub-categories are shared across all franchises. When OFF, each franchise only sees the categories it created itself.',
   tax_rules: 'When ON, tax rules are shared across all franchises. When OFF, each franchise manages its own tax rules privately.',
   measurement_units: 'When ON, measurement units are shared across all franchises. When OFF, each franchise manages its own units privately.',
-  customers: 'When ON, customer records — including tailor measurements — are shared across all franchises, so any franchise can look up an existing customer\'s POS or tailor history by phone number. When OFF (default), each franchise only sees the customers it created itself.',
+  customers: 'When ON, customer records — name, phone, email — are shared across all franchises, so any franchise can look up an existing customer by phone number and see their POS or tailor order history. When OFF (default), each franchise only sees the customers it created itself.',
+  tailor_measurements: 'When ON (default), a shared customer\'s tailor measurements are visible to every franchise, not just the one that took them. When OFF, a franchise can still look up a shared customer\'s contact info and order history, but their exact body measurements stay visible only to whichever franchise actually measured them.',
   suppliers: 'When ON, supplier records are shared across all franchises. When OFF (default), each franchise manages its own suppliers privately.',
 }
 

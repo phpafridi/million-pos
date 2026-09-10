@@ -18,6 +18,7 @@ type OrderPayload = {
   sale_ref: string
   payment_method: 'cash' | 'cheque' | 'card' | 'easypaisa' | 'pending'
   paid_amount: number
+  points_redeemed?: number
   discount: number
   sale_date?: string
   cart: OrderItem[]
@@ -27,7 +28,7 @@ type OrderPayload = {
 export async function AddOrder(payload: OrderPayload) {
   try {
     const { sales_person, customer_id, sale_ref, payment_method,
-            paid_amount, discount, cart, sale_date } = payload
+            paid_amount, discount, cart, sale_date, points_redeemed } = payload
 
     if (!cart || cart.length === 0) {
       throw new Error('Cart cannot be empty')
@@ -47,6 +48,19 @@ export async function AddOrder(payload: OrderPayload) {
     const custEmail   = customer?.email         ?? 'null'
     const custPhone   = customer?.phone         ?? '00'
     const custAddress = customer?.address       ?? 'null'
+
+    // Never trust the client's claimed redemption amount — clamp to
+    // whatever the customer's actual current balance is, only if
+    // they're a real gold member, and only if Head Office currently has
+    // the loyalty system turned on at all (checked here server-side so
+    // a disabled system can't be bypassed by an outdated client still
+    // showing the redemption UI).
+    const { getLoyaltyConfig } = await import('@/lib/loyaltyConfig')
+    const loyaltyConfig = await getLoyaltyConfig()
+    const pointsToDeduct = (loyaltyConfig.enabled && customer?.is_gold_member && points_redeemed && points_redeemed > 0)
+      ? Math.min(points_redeemed, customer.loyalty_points)
+      : 0
+    const loyaltyDiscountAmount = pointsToDeduct * loyaltyConfig.redeemValuePerPoint
 
     // ── 2. Compute totals ────────────────────────────────────────────────────
     const subtotal       = cart.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0)
@@ -103,13 +117,13 @@ export async function AddOrder(payload: OrderPayload) {
       INSERT INTO tbl_order (
         shop_id, order_no, order_number, customer_id, customer_name, customer_email,
         customer_phone, customer_address, shipping_address,
-        sub_total, discount, discount_amount, total_tax, grand_total,
+        sub_total, discount, discount_amount, loyalty_points_redeemed, loyalty_discount_amount, total_tax, grand_total,
         payment_method, payment_ref, order_status, note, sales_person,
         order_date
       ) VALUES (
         ${shopId}, ${orderNo}, ${orderNumber}, ${custId}, ${custName}, ${custEmail},
         ${custPhone}, ${custAddress}, ${custAddress},
-        ${subtotal}, ${discount}, ${discountAmount}, 0, ${subtotal - discountAmount},
+        ${subtotal}, ${discount}, ${discountAmount}, ${pointsToDeduct}, ${loyaltyDiscountAmount}, 0, ${subtotal - discountAmount},
         ${payment_method}, ${sale_ref}, ${orderStatus}, '', ${sales_person || 'Unknown'},
         ${orderDate}
       )
@@ -219,10 +233,38 @@ export async function AddOrder(payload: OrderPayload) {
       shopIdOverride: shopId,
     })
 
+    // Deduct redeemed points — separate from the awarding step below,
+    // since a customer can redeem and earn in the same transaction
+    // (e.g. redeem some toward this purchase, earn new ones on what's
+    // still paid in cash).
+    if (pointsToDeduct > 0) {
+      await prisma.tbl_customer.update({
+        where: { customer_id: custId },
+        data: { loyalty_points: { decrement: pointsToDeduct } },
+      })
+    }
+
+    // Award loyalty points — only for actually-paid orders, not ones
+    // saved as pending, since points shouldn't be earned before payment
+    // is collected.
+    let loyaltyAwarded = 0
+    if (payment_method !== 'pending' && custId) {
+      try {
+        const { awardLoyaltyPoints } = await import('@/lib/loyalty')
+        const result = await awardLoyaltyPoints(custId, subtotal - discountAmount + totalTax)
+        loyaltyAwarded = result.awarded
+      } catch (err) {
+        console.error('Failed to award loyalty points:', err)
+        // Never let a loyalty-points failure block the sale itself
+      }
+    }
+
     return {
       success: true,
       order:   serializedOrder,
       invoice: serializedInvoice,
+      loyalty_points_awarded: loyaltyAwarded,
+      loyalty_points_redeemed: pointsToDeduct,
       message: payment_method === 'pending'
         ? 'Order saved as pending'
         : 'Order completed successfully',

@@ -1,6 +1,7 @@
 'use client'
 import React, { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog'
 
 type Layout = {
   showLogo: boolean
@@ -115,8 +116,12 @@ export default function ManagePrinterSettings() {
     }
   }
 
-  const removePrinter = async (printer_id: number) => {
-    if (!confirm('Delete this printer configuration?')) return
+  const [pendingRemovePrinter, setPendingRemovePrinter] = useState<number | null>(null)
+
+  const removePrinter = async () => {
+    if (pendingRemovePrinter === null) return
+    const printer_id = pendingRemovePrinter
+    setPendingRemovePrinter(null)
     try {
       const res = await fetch(`/api/printer-settings/${printer_id}`, { method: 'DELETE' })
       const json = await res.json()
@@ -332,7 +337,7 @@ export default function ManagePrinterSettings() {
                                 Set Default
                               </button>
                             )}
-                            <button className="btn btn-danger btn-flat btn-xs" onClick={() => removePrinter(p.printer_id)}>
+                            <button className="btn btn-danger btn-flat btn-xs" onClick={() => setPendingRemovePrinter(p.printer_id)}>
                               Delete
                             </button>
                           </td>
@@ -348,6 +353,14 @@ export default function ManagePrinterSettings() {
           </div>
         </section>
       </div>
+
+      <DeleteConfirmDialog
+        open={pendingRemovePrinter !== null}
+        onOpenChange={(open) => { if (!open) setPendingRemovePrinter(null) }}
+        title="Delete Printer Configuration"
+        description="Are you sure you want to delete this printer configuration? This action cannot be undone."
+        onConfirm={removePrinter}
+      />
     </div>
   )
 }

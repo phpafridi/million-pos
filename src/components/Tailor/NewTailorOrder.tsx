@@ -134,6 +134,31 @@ export default function NewTailorOrder() {
     FetchTailorOrdersByCustomer(c.tailor_customer_id).then((orders) => {
       setOrderHistory(orders)
       setLoadingHistory(false)
+      // Pre-fill design/style preferences from their most recent order —
+      // measurements already come from the customer record above, but
+      // pocket style, collar style, etc. live on the order itself, so a
+      // returning customer's usual preferences need to come from here
+      // instead. Pricing, quantity, and dates are deliberately left
+      // blank since those should be fresh for each new order.
+      if (orders.length > 0) {
+        const last = orders[0] as any
+        setOrderForm((f) => ({
+          ...f,
+          garment_type: last.garment_type || f.garment_type,
+          fabric_details: last.fabric_details || f.fabric_details,
+          design_number: last.design_number || f.design_number,
+          size_1: last.size_1 || f.size_1,
+          size_2: last.size_2 || f.size_2,
+          pocket_style: last.pocket_style || f.pocket_style,
+          collar_style: last.collar_style || f.collar_style,
+          collar_cut: last.collar_cut || f.collar_cut,
+          qurta_style: last.qurta_style || f.qurta_style,
+        }))
+        if (last.style_options) {
+          setStyleOptions(last.style_options as Record<string, boolean>)
+        }
+        toast.success(`Filled in from their last order (${last.order_number}) — please review before saving`)
+      }
     })
   }
 

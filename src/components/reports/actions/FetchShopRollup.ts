@@ -31,7 +31,7 @@ export default async function FetchShopRollup(startDate: string, endDate: string
   end.setHours(23, 59, 59, 999)
 
   const shops = await prisma.tbl_shop.findMany({
-    where: scope.isSuperAdmin ? {} : { shop_id: scope.shopId ?? -1 },
+    where: scope.isSuperAdmin ? { is_head_office: false } : { shop_id: scope.shopId ?? -1 },
     orderBy: { shop_id: 'asc' },
   })
 

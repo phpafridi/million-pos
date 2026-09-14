@@ -216,9 +216,11 @@ export async function FetchReturnByOrder(order_id: number) {
 
 export async function FetchAllReturns() {
   try {
+    const scope = await getShopScope()
     const returns = await prisma.tbl_return.findMany({
+      where: scopeWhere(scope),
       include: {
-        order: { select: { order_no: true, customer_name: true, grand_total: true } },
+        order: { select: { order_id: true, order_no: true, customer_name: true, grand_total: true } },
         items: {
           include: {
             product: {

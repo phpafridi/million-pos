@@ -51,8 +51,15 @@ export async function FetchTailorCustomers(search?: string) {
   const measurementsShared = await isSynced('tailor_measurements')
 
   return customers.map((c) => {
-    const ownRecord = c.shop_id === scope.shopId
-    const redact = !ownRecord && !measurementsShared
+    // A shared customer (shop_id null) has no reliable "owner" once
+    // shared — treating it as "not mine" for every franchise (the old
+    // logic) silently hid measurements from everyone, including whoever
+    // is actively working with that customer right now. Only redact
+    // when viewing a DIFFERENT, specific franchise's genuinely private
+    // customer — a shared record's measurements are visible by default,
+    // gated only by the network-wide sharing toggle itself.
+    const isPrivateToAnotherShop = c.shop_id !== null && c.shop_id !== scope.shopId
+    const redact = isPrivateToAnotherShop && !measurementsShared
     return {
     ...c,
     tailor_customer_id: c.customer_id, // kept for the UI's existing field name
@@ -507,6 +514,7 @@ export async function FetchTailorOrdersByCustomer(customer_id: number) {
     tailor_order_id: o.tailor_order_id,
     order_number: o.order_number,
     garment_type: o.garment_type,
+    fabric_details: o.fabric_details,
     quantity: o.quantity,
     price: Number(o.price),
     advance_paid: Number(o.advance_paid),
@@ -514,5 +522,13 @@ export async function FetchTailorOrdersByCustomer(customer_id: number) {
     status_label: STATUS_LABELS[o.status] || o.status,
     order_date: o.order_date.toISOString(),
     promised_date: o.promised_date ? o.promised_date.toISOString() : null,
+    design_number: o.design_number,
+    size_1: o.size_1,
+    size_2: o.size_2,
+    pocket_style: o.pocket_style,
+    collar_style: o.collar_style,
+    collar_cut: o.collar_cut,
+    qurta_style: o.qurta_style,
+    style_options: o.style_options,
   }))
 }

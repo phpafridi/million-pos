@@ -1,6 +1,7 @@
 'use client'
 import React, { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog'
 
 type MeasurementUnit = {
   unit_id: number
@@ -72,8 +73,12 @@ export default function ManageMeasurementUnits() {
     }
   }
 
-  const handleDeactivate = async (unit_id: number) => {
-    if (!confirm('Remove this unit from the add-product dropdown? Existing products keep using it.')) return
+  const [pendingRemoveUnit, setPendingRemoveUnit] = useState<number | null>(null)
+
+  const handleDeactivate = async () => {
+    if (pendingRemoveUnit === null) return
+    const unit_id = pendingRemoveUnit
+    setPendingRemoveUnit(null)
     try {
       const res = await fetch(`/api/measurement-units/${unit_id}`, { method: 'DELETE' })
       const json = await res.json()
@@ -184,7 +189,7 @@ export default function ManageMeasurementUnits() {
                           <td>
                             <button
                               className="btn btn-danger btn-flat btn-xs"
-                              onClick={() => handleDeactivate(unit.unit_id)}
+                              onClick={() => setPendingRemoveUnit(unit.unit_id)}
                             >
                               Remove
                             </button>
@@ -205,6 +210,15 @@ export default function ManageMeasurementUnits() {
           </div>
         </section>
       </div>
+
+      <DeleteConfirmDialog
+        open={pendingRemoveUnit !== null}
+        onOpenChange={(open) => { if (!open) setPendingRemoveUnit(null) }}
+        title="Remove Measurement Unit"
+        description="Remove this unit from the add-product dropdown? Existing products keep using it."
+        onConfirm={handleDeactivate}
+        confirmLabel="Remove"
+      />
     </div>
   )
 }

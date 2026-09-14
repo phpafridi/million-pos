@@ -18,7 +18,7 @@ export async function getKPIsByShop(): Promise<ShopKPI[]> {
   if (!scope.isSuperAdmin) return []
 
   const shops = await prisma.tbl_shop.findMany({
-    where: { is_active: true },
+    where: { is_active: true, is_head_office: false },
     select: { shop_id: true, shop_name: true, shop_code: true },
     orderBy: { shop_id: 'asc' },
   })

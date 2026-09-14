@@ -17,6 +17,7 @@ export const navigationMenus: NavItem[] = [
       { title: 'Manage Invoice', path: '/dashboard/order-process/manage-invoice' },
       { title: 'View Invoice Detail', path: 'action:view-invoice' },
       { title: 'Returns & Exchanges', path: '/dashboard/order-process/returns' },
+      { title: 'View Return Detail', path: 'action:view-return' },
     ],
   },
   {

@@ -14,6 +14,7 @@ type User = {
   image: string | null
   password: string | null
   flag: string | null // 0 = User, 1 = Admin
+  is_active: boolean
 }
 
 export default function EmployeeList() {
@@ -74,13 +75,14 @@ export default function EmployeeList() {
                         <th className="active text-center">Name</th>
                         <th className="col-sm-1 active text-center">Login</th>
                         <th className="col-sm-1 active text-center">User Type</th>
+                        <th className="col-sm-1 active text-center">Status</th>
                         <th className="col-sm-2 active text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan={5} className="text-center">
+                          <td colSpan={6} className="text-center">
                             <strong>Loading employees...</strong>
                           </td>
                         </tr>
@@ -92,10 +94,17 @@ export default function EmployeeList() {
                             <td>{user.email}</td>
                             <td>{user.flag === '1' ? 'Admin' : 'User'}</td>
                             <td>
+                              {user.is_active !== false ? (
+                                <span className="label label-success">Active</span>
+                              ) : (
+                                <span className="label label-default">Disabled</span>
+                              )}
+                            </td>
+                            <td>
                               <div className="btn-group">
                                 {isCurrentUser !== user.email && canDelete && (
                                   <>
-                                    <ButtonDelete email={user.email} onSucess={getUsers} />
+                                    <ButtonDelete email={user.email} isActive={user.is_active !== false} onSucess={getUsers} />
                                     &nbsp;|&nbsp;
                                   </>
                                 )}
@@ -121,7 +130,7 @@ export default function EmployeeList() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={5} className="text-center">
+                          <td colSpan={6} className="text-center">
                             <strong>No employees found.</strong>
                           </td>
                         </tr>

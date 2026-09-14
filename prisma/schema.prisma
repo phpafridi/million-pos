@@ -656,6 +656,7 @@ model User {
   image          String?
   password       String?
   flag           String?
+  is_active      Boolean     @default(true) // disabled instead of deleted — preserves the account and its audit trail history rather than erasing it
   shop_id        Int?        // null = super admin / CEO, sees all shops
   is_super_admin Boolean     @default(false)
   accounts       Account[]

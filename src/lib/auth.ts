@@ -43,7 +43,17 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const shop = user.shop_id ? await prisma.tbl_shop.findUnique({ where: { shop_id: user.shop_id }, select: { is_warehouse: true, login_slug: true } }) : null;
+        if (!user.is_active) {
+          await recordLoginAttempt(email, ip, false);
+          throw new Error('This account has been disabled. Contact Head Office or your franchise admin.');
+        }
+
+        const shop = user.shop_id ? await prisma.tbl_shop.findUnique({ where: { shop_id: user.shop_id }, select: { is_warehouse: true, login_slug: true, is_active: true } }) : null;
+
+        if (shop && !shop.is_active && !user.is_super_admin) {
+          await recordLoginAttempt(email, ip, false);
+          throw new Error('This franchise/warehouse has been deactivated. Contact Head Office.');
+        }
 
         // A franchise-specific login page (/login/[slug]) passes shopSlug —
         // reject anyone who isn't actually a member of that franchise, even
@@ -88,6 +98,7 @@ export const authOptions: NextAuthOptions = {
         token.is_super_admin = (user as any).is_super_admin;
         token.is_warehouse = (user as any).is_warehouse;
         token.login_slug = (user as any).login_slug;
+        token.is_active = true; // login already rejects a disabled account, so this is always true at sign-in
         token.rolesCheckedAt = Date.now();
         return token;
       }
@@ -108,10 +119,23 @@ export const authOptions: NextAuthOptions = {
           token.shop_id = dbUser.shop_id ?? null;
           token.is_super_admin = dbUser.is_super_admin;
           token.flag = dbUser.flag ?? null;
+          // Re-checked here too, not just at login — this is what forces
+          // a mid-session logout when an account gets disabled while the
+          // person is already logged in, rather than waiting for their
+          // token to naturally expire (up to 8 hours per the session
+          // maxAge above).
+          token.is_active = dbUser.is_active;
           if (dbUser.shop_id) {
-            const shop = await prisma.tbl_shop.findUnique({ where: { shop_id: dbUser.shop_id }, select: { is_warehouse: true, login_slug: true } });
+            const shop = await prisma.tbl_shop.findUnique({ where: { shop_id: dbUser.shop_id }, select: { is_warehouse: true, login_slug: true, is_active: true } });
             token.is_warehouse = shop?.is_warehouse ?? false;
             token.login_slug = shop?.login_slug ?? null;
+            // A deactivated franchise/warehouse forces out everyone
+            // logged in under it, the same way a deactivated individual
+            // account does — Head Office is exempt since they aren't
+            // tied to any one shop.
+            if (shop && !shop.is_active && !dbUser.is_super_admin) {
+              token.is_active = false;
+            }
           } else {
             token.is_warehouse = false;
             token.login_slug = null;
@@ -131,6 +155,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).shop_id = token.shop_id as number | null;
         (session.user as any).is_super_admin = token.is_super_admin as boolean;
         (session.user as any).is_warehouse = token.is_warehouse as boolean;
+        (session.user as any).is_active = token.is_active as boolean;
         (session.user as any).login_slug = token.login_slug as string | null;
       }
       return session;

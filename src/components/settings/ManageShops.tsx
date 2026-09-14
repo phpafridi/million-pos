@@ -2,6 +2,8 @@
 import React, { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from 'next-auth/react'
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 type Shop = {
   shop_id: number
@@ -73,6 +75,8 @@ export default function ManageShops() {
     }
   }
 
+  const [pendingToggle, setPendingToggle] = useState<Shop | null>(null)
+
   const toggleActive = async (shop: Shop) => {
     try {
       const res = await fetch(`/api/shops/${shop.shop_id}`, {
@@ -85,6 +89,8 @@ export default function ManageShops() {
     } catch (err) {
       console.error(err)
       toast.error('Failed to update')
+    } finally {
+      setPendingToggle(null)
     }
   }
 
@@ -208,7 +214,7 @@ export default function ManageShops() {
                             {!s.is_head_office && (
                               <button
                                 className={`btn btn-xs btn-flat ${s.is_active ? 'btn-danger' : 'btn-primary'}`}
-                                onClick={() => toggleActive(s)}
+                                onClick={() => s.is_active ? setPendingToggle(s) : toggleActive(s)}
                               >
                                 {s.is_active ? 'Deactivate' : 'Activate'}
                               </button>
@@ -247,6 +253,21 @@ export default function ManageShops() {
           </div>
         </div>
       )}
+
+      <Dialog open={!!pendingToggle} onOpenChange={(open) => { if (!open) setPendingToggle(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deactivate {pendingToggle?.is_warehouse ? 'Warehouse' : 'Franchise'}</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to deactivate "{pendingToggle?.shop_name}"? Every employee at this {pendingToggle?.is_warehouse ? 'warehouse' : 'franchise'} will be immediately unable to log in, including anyone already logged in right now — this can be reversed anytime by activating it again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPendingToggle(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => pendingToggle && toggleActive(pendingToggle)}>Deactivate</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

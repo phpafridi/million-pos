@@ -6,6 +6,7 @@ import { DeleteSupplier } from './actions/DeleteSupplier'
 import { hasPermission } from '@/lib/clientPermissions'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog'
 
 type Supplier = {
   supplier_id: number
@@ -24,14 +25,18 @@ export default function ManageSupplier() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
 
-  const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Delete supplier "${name}"? This can't be undone.`)) return
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null)
+
+  const handleDelete = async () => {
+    if (!pendingDelete) return
     try {
-      await DeleteSupplier(id)
+      await DeleteSupplier(pendingDelete.id)
       toast.success('Supplier deleted')
-      setSuppliers((prev) => prev.filter((s) => s.supplier_id !== id))
+      setSuppliers((prev) => prev.filter((s) => s.supplier_id !== pendingDelete.id))
     } catch (err: any) {
       toast.error(err.message || 'Failed to delete supplier')
+    } finally {
+      setPendingDelete(null)
     }
   }
 
@@ -189,7 +194,7 @@ export default function ManageSupplier() {
                                 </button>
                               )}
                               {canDelete && (
-                                <button className="btn btn-danger btn-xs" style={{ marginLeft: 4 }} title="Delete" onClick={() => handleDelete(s.supplier_id, s.company_name)}>
+                                <button className="btn btn-danger btn-xs" style={{ marginLeft: 4 }} title="Delete" onClick={() => setPendingDelete({ id: s.supplier_id, name: s.company_name })}>
                                   <i className="fa fa-trash"></i>
                                 </button>
                               )}
@@ -207,6 +212,13 @@ export default function ManageSupplier() {
           </div>
         </section>
       </div>
+
+      <DeleteConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => { if (!open) setPendingDelete(null) }}
+        description={`Are you sure you want to delete supplier "${pendingDelete?.name}"? This action cannot be undone.`}
+        onConfirm={handleDelete}
+      />
     </div>
   )
 }

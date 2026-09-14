@@ -2,6 +2,7 @@
 import React, { useState } from 'react'
 import { toast } from 'sonner'
 import { DeleteEntityPhoto } from '@/lib/entityPhotos'
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog'
 
 type Photo = { photo_id: number; file_name: string; caption?: string | null; uploaded_by: string; uploaded_at: string }
 
@@ -11,16 +12,18 @@ export default function PhotoGallery({ photos, canDelete, onDeleted }: {
   onDeleted?: (photoId: number) => void
 }) {
   const [lightbox, setLightbox] = useState<Photo | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Photo | null>(null)
 
-  const handleDelete = async (photo: Photo, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!confirm('Remove this photo?')) return
+  const handleDelete = async () => {
+    if (!pendingDelete) return
     try {
-      await DeleteEntityPhoto(photo.photo_id)
+      await DeleteEntityPhoto(pendingDelete.photo_id)
       toast.success('Photo removed')
-      onDeleted?.(photo.photo_id)
+      onDeleted?.(pendingDelete.photo_id)
     } catch (err: any) {
       toast.error(err.message || 'Failed to remove photo')
+    } finally {
+      setPendingDelete(null)
     }
   }
 
@@ -44,7 +47,7 @@ export default function PhotoGallery({ photos, canDelete, onDeleted }: {
             />
             {canDelete && (
               <button
-                onClick={(e) => handleDelete(p, e)}
+                onClick={(e) => { e.stopPropagation(); setPendingDelete(p) }}
                 style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: '#d9403a', color: '#fff', border: 'none', fontSize: 12, lineHeight: '20px', cursor: 'pointer' }}
               >×</button>
             )}
@@ -68,6 +71,14 @@ export default function PhotoGallery({ photos, canDelete, onDeleted }: {
           </div>
         </div>
       )}
+
+      <DeleteConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => { if (!open) setPendingDelete(null) }}
+        title="Remove Photo"
+        description="Are you sure you want to remove this photo? This action cannot be undone."
+        onConfirm={handleDelete}
+      />
     </>
   )
 }

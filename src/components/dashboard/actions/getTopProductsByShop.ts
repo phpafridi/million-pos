@@ -14,7 +14,7 @@ export async function getTopProductsByShop(): Promise<{ rows: ProductByShopRow[]
   const allShops = scope.isSuperAdmin || scope.shopId === null
 
   const shops = await prisma.tbl_shop.findMany({
-    where: allShops ? { is_active: true } : { shop_id: scope.shopId ?? -1 },
+    where: allShops ? { is_active: true, is_head_office: false } : { shop_id: scope.shopId ?? -1 },
     select: { shop_id: true, shop_name: true },
     orderBy: { shop_id: 'asc' },
   })

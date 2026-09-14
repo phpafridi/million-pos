@@ -87,7 +87,11 @@ export async function redactMeasurementsIfNeeded<T extends { shop_id: number | n
   customer: T,
   scope: ShopScope
 ): Promise<T> {
-  if (customer.shop_id === scope.shopId) return customer // it's genuinely this shop's own record
+  // A shared customer (shop_id null) has no specific "other shop" to
+  // redact from — only a genuinely private customer belonging to a
+  // DIFFERENT, specific shop should ever be redacted.
+  const isPrivateToAnotherShop = customer.shop_id !== null && customer.shop_id !== scope.shopId
+  if (!isPrivateToAnotherShop) return customer
 
   const measurementsShared = await isSynced('tailor_measurements')
   if (measurementsShared) return customer

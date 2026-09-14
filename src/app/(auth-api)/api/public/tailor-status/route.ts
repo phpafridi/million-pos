@@ -22,6 +22,11 @@ const STATUS_LABELS: Record<string, string> = {
  * a key, anyone could look up any email's order status.
  *
  * Usage: GET /api/public/tailor-status?email=customer@example.com
+ *    or: GET /api/public/tailor-status?phone=03001234567
+ *    or both — email is tried first, phone is used as a fallback if no
+ *    customer is found by email (a tailor order might have been created
+ *    with a different or no email, but the phone number is more likely
+ *    to match what's on file here).
  * Header: x-api-key: <TAILOR_STATUS_API_KEY>
  */
 export async function GET(req: Request) {
@@ -41,20 +46,32 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const email = searchParams.get("email")?.trim().toLowerCase();
-    if (!email) {
-      return NextResponse.json({ success: false, error: "email query parameter is required" }, { status: 400 });
+    const phone = searchParams.get("phone")?.trim();
+    if (!email && !phone) {
+      return NextResponse.json({ success: false, error: "Provide an email and/or phone query parameter" }, { status: 400 });
     }
 
-    const customer = await prisma.tbl_customer.findFirst({
-      where: { email: { equals: email } },
-      select: {
-        customer_id: true,
-        customer_name: true,
-        phone: true,
-        is_gold_member: true,
-        loyalty_points: true,
-      },
-    });
+    let customer = null;
+    if (email) {
+      customer = await prisma.tbl_customer.findFirst({
+        where: { email: { equals: email } },
+        select: {
+          customer_id: true,
+          customer_name: true,
+          phone: true,
+        },
+      });
+    }
+    if (!customer && phone) {
+      customer = await prisma.tbl_customer.findFirst({
+        where: { phone: { equals: phone } },
+        select: {
+          customer_id: true,
+          customer_name: true,
+          phone: true,
+        },
+      });
+    }
 
     if (!customer) {
       return NextResponse.json({ success: true, found: false, orders: [] });
@@ -84,8 +101,6 @@ export async function GET(req: Request) {
       customer: {
         name: customer.customer_name,
         phone: customer.phone,
-        is_gold_member: customer.is_gold_member,
-        loyalty_points: customer.loyalty_points,
       },
       orders: orders.map((o) => ({
         order_number: o.order_number,

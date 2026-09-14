@@ -34,6 +34,16 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL("/", request.url));
     }
 
+    // Force logout for a disabled account — the periodic re-check in the
+    // jwt callback (auth.ts) catches this within 60 seconds even if the
+    // person is already mid-session, not just on their next fresh login.
+    if (token.is_active === false) {
+      const response = NextResponse.redirect(new URL("/", request.url));
+      response.cookies.delete("next-auth.session-token");
+      response.cookies.delete("__Secure-next-auth.session-token");
+      return response;
+    }
+
     // Admin bypass
     if (token.flag === "1") {
       return NextResponse.next();

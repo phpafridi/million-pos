@@ -132,7 +132,7 @@ export async function FetchCustomerReport(startDate: string, endDate: string): P
   let byShop: CustomerReportData['byShop'] = []
   if (scope.isSuperAdmin) {
     const shops = await prisma.tbl_shop.findMany({
-      where: { is_active: true },
+      where: { is_active: true, is_head_office: false },
       select: { shop_id: true, shop_name: true, shop_code: true },
       orderBy: { shop_id: 'asc' },
     })

@@ -1,7 +1,9 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { FetchAllReturns } from '../OrderProcess/actions/ProcessReturn'
+import { hasPermission } from '@/lib/clientPermissions'
 import Link from 'next/link'
 
 type ReturnRecord = {
@@ -11,11 +13,13 @@ type ReturnRecord = {
   return_date: string
   note: string | null
   processed_by: string
-  order: { order_no: number; customer_name: string; grand_total: number }
+  order: { order_id: number; order_no: number; customer_name: string; grand_total: number }
   items: { qty: number; sub_total: number; item_type: string }[]
 }
 
 export default function ReturnsList() {
+  const { data: session } = useSession()
+  const canViewReturn = hasPermission(session, 'action:view-return', 'view')
   const [returns, setReturns] = useState<ReturnRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -33,6 +37,7 @@ export default function ReturnsList() {
           note: r.note,
           processed_by: r.processed_by,
           order: {
+            order_id: r.order.order_id,
             order_no: r.order.order_no,
             customer_name: r.order.customer_name,
             grand_total: Number(r.order.grand_total),
@@ -128,10 +133,14 @@ export default function ReturnsList() {
                       </td>
                       <td>{new Date(r.return_date).toLocaleDateString()}</td>
                       <td>
-                        <Link href={`/dashboard/order-process/invoice/${r.order.order_no}?isOrder=false`}
-                          className="text-primary">
-                          ORD-{r.order.order_no}
-                        </Link>
+                        {canViewReturn ? (
+                          <Link href={`/dashboard/order-process/invoice/${r.order.order_id}?isOrder=false`}
+                            className="text-primary">
+                            ORD-{r.order.order_no}
+                          </Link>
+                        ) : (
+                          <span>ORD-{r.order.order_no}</span>
+                        )}
                       </td>
                       <td>{r.order.customer_name}</td>
                       <td>{retItems.length} item(s) × {retItems.reduce((s, i) => s + i.qty, 0)} units</td>
@@ -141,11 +150,15 @@ export default function ReturnsList() {
                         {r.note || '—'}
                       </td>
                       <td>
-                        <Link
-                          href={`/dashboard/order-process/invoice/${r.order.order_no}?isOrder=false`}
-                          className="btn btn-xs btn-default">
-                          <i className="fa fa-eye" /> View Order
-                        </Link>
+                        {canViewReturn ? (
+                          <Link
+                            href={`/dashboard/order-process/invoice/${r.order.order_id}?isOrder=false`}
+                            className="btn btn-xs btn-default">
+                            <i className="fa fa-eye" /> View Order
+                          </Link>
+                        ) : (
+                          <span className="text-muted" style={{ fontSize: 12 }}>No access</span>
+                        )}
                       </td>
                     </tr>
                   )

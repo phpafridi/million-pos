@@ -36,7 +36,7 @@ export async function getRevenueTrend(days: number = 14): Promise<{ points: Dail
   const start = new Date(`${startDateString}T00:00:00.000Z`)
 
   const shops = await prisma.tbl_shop.findMany({
-    where: allShops ? { is_active: true } : { shop_id: scope.shopId ?? -1 },
+    where: allShops ? { is_active: true, is_head_office: false } : { shop_id: scope.shopId ?? -1 },
     select: { shop_id: true, shop_name: true },
     orderBy: { shop_id: 'asc' },
   })

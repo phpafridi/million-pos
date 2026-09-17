@@ -33,6 +33,9 @@ type TailorReceiptDetails = {
   deliveryPhone?: string
   styleOptions?: string[]
   measurements?: { label: string; value: string }[]
+  tailoringAmount?: number
+  extraStitchingAmount?: number
+  otherChargesAmount?: number
 }
 
 type PrintReceiptProps = {
@@ -317,56 +320,35 @@ export default function PrintReceipt({
         {layout.showOrderNumber && orderNo !== undefined && (
           <Row left="Order #" right={String(orderNo)} />
         )}
-        {layout.showDateTime && (
+        {layout.showDateTime && !tailorDetails && (
           <Row left="Date" right={new Date(orderDate || Date.now()).toLocaleString()} />
         )}
         <Row left="Customer" right={customer.customer_name} />
 
         {tailorDetails && (
           <>
+            {tailorDetails.garmentType && (
+              <>
+                <Line />
+                <Text bold={true} size={{ width: 1, height: 1 }}>{tailorDetails.garmentType}</Text>
+              </>
+            )}
+            {orderDate && <Row left="Rec Date" right={new Date(orderDate).toLocaleDateString()} />}
+            {tailorDetails.promisedDate && <Row left="Del Date" right={new Date(tailorDetails.promisedDate).toLocaleDateString()} />}
             <Line />
-            <Text bold={true} size={{ width: 1, height: 1 }}>ORDER DETAILS</Text>
-            {tailorDetails.phone && <Row left="Phone" right={tailorDetails.phone} />}
-            {tailorDetails.garmentType && <Row left="Garment" right={tailorDetails.garmentType} />}
-            {tailorDetails.fabricDetails && <Row left="Fabric" right={tailorDetails.fabricDetails} />}
-            {tailorDetails.promisedDate && <Row left="Promised" right={new Date(tailorDetails.promisedDate).toLocaleDateString()} />}
-            {tailorDetails.status && <Row left="Status" right={tailorDetails.status} />}
-            {tailorDetails.deliveryMethod && <Row left="Delivery" right={tailorDetails.deliveryMethod} />}
-
-            {tailorDetails.deliveryMethod === 'Home Delivery' && (tailorDetails.deliveryAddress || tailorDetails.deliveryPhone) && (
-              <>
-                <Line />
-                <Text bold={true} size={{ width: 1, height: 1 }}>DELIVERY DETAILS</Text>
-                {tailorDetails.deliveryPhone && <Row left="Contact" right={tailorDetails.deliveryPhone} />}
-                {tailorDetails.deliveryAddress && <Text size={{ width: 1, height: 1 }}>{tailorDetails.deliveryAddress}</Text>}
-              </>
-            )}
-
-            {tailorDetails.styleOptions && tailorDetails.styleOptions.length > 0 && (
-              <>
-                <Line />
-                <Text bold={true} size={{ width: 1, height: 1 }}>STYLE OPTIONS</Text>
-                <Text size={{ width: 1, height: 1 }}>{tailorDetails.styleOptions.join(', ')}</Text>
-              </>
-            )}
-
-            {tailorDetails.measurements && tailorDetails.measurements.length > 0 && (
-              <>
-                <Line />
-                <Text bold={true} size={{ width: 1, height: 1 }}>MEASUREMENTS (inches)</Text>
-                {tailorDetails.measurements.map((m, i) => (
-                  <Row key={i} left={m.label} right={m.value} />
-                ))}
-              </>
-            )}
-            <Line />
-            <Text bold={true} size={{ width: 1, height: 1 }}>PAYMENT</Text>
           </>
         )}
 
         {layout.showCashier && salesPerson && (
           <Row left="Cashier" right={salesPerson} />
         )}
+        {tailorDetails && (tailorDetails.tailoringAmount !== undefined) ? (
+          <>
+            <Row left="Tailoring Amount" right={`${currency}${(tailorDetails.tailoringAmount || 0).toFixed(2)}`} />
+            <Row left="Sp. Stitching Amount" right={`${currency}${(tailorDetails.extraStitchingAmount || 0).toFixed(2)}`} />
+            <Row left="Other Amount" right={`${currency}${(tailorDetails.otherChargesAmount || 0).toFixed(2)}`} />
+          </>
+        ) : null}
         <Row left="Order Total" right={`${currency}${grandTotal.toFixed(2)}`} />
         <Row left="Paid" right={`${currency}${paidAmount.toFixed(2)}`} />
         {paidAmount >= grandTotal ? (
@@ -414,6 +396,12 @@ export default function PrintReceipt({
         ) : null}
 
         <Br />
+        {tailorDetails && (
+          <>
+            <Text align="center" size={{ width: 1, height: 1 }}>Check your order status online by creating an account on millionairepk.com and visiting the Tailor section under your Profile tab.</Text>
+            <Br />
+          </>
+        )}
         <Text align="center" size={largeText ? { width: 2, height: 2 } : undefined}>{layout.footerText}</Text>
         {layout.showBarcode && orderNo !== undefined && (
           <>

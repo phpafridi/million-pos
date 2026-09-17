@@ -683,6 +683,9 @@ export default function NewTailorOrder() {
           deliveryMethod: lastOrderData.delivery_method === 'home_delivery' ? 'Home Delivery' : 'Customer Pickup',
           deliveryAddress: lastOrderData.delivery_address || undefined,
           deliveryPhone: lastOrderData.delivery_phone || undefined,
+          tailoringAmount: lastOrderData.tailoring_amount,
+          extraStitchingAmount: lastOrderData.extra_stitching_amount,
+          otherChargesAmount: lastOrderData.other_charges_amount,
           styleOptions: [
             lastOrderData.pocket_style,
             lastOrderData.collar_style,

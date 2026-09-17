@@ -441,6 +441,9 @@ export default function TailorOrderDetail({ tailorOrderId }: { tailorOrderId: nu
           deliveryMethod: order.delivery_method === 'home_delivery' ? 'Home Delivery' : 'Customer Pickup',
           deliveryAddress: order.delivery_address || undefined,
           deliveryPhone: order.delivery_phone || undefined,
+          tailoringAmount: order.tailoring_amount,
+          extraStitchingAmount: order.extra_stitching_amount,
+          otherChargesAmount: order.other_charges_amount,
           styleOptions: [
             order.pocket_style,
             order.collar_style,

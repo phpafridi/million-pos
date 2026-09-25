@@ -81,7 +81,7 @@ export default function PurchaseReportPDF({
   startDate: string
   endDate: string
   report: PurchaseReportRow[]
-  totals: { totalQty: number; totalAmount: number }
+  totals: { totalQty: string; totalAmount: number }
 }) {
   return (
     <Document>

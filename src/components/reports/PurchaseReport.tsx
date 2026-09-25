@@ -36,7 +36,20 @@ export default function PurchaseReport() {
   const totalPurchases = report.length
   const totalAmount    = report.reduce((s, r) => s + r.grandTotal, 0)
   const totalItems     = report.reduce((s, r) => s + r.items.length, 0)
-  const totalQty       = report.reduce((s, r) => s + r.items.reduce((x, i) => x + i.qty, 0), 0)
+  // Summing raw quantities across every item ignored that different
+  // products use different units (pcs vs meter vs kg) — 300 pcs + 4991
+  // meter doesn't mean anything added together. Group by unit instead,
+  // so each unit type gets its own correct total.
+  const qtyByUnit = new Map<string, number>()
+  for (const r of report) {
+    for (const i of r.items) {
+      const unit = i.unit || 'pcs'
+      qtyByUnit.set(unit, (qtyByUnit.get(unit) || 0) + i.qty)
+    }
+  }
+  const totalQtyDisplay = Array.from(qtyByUnit.entries())
+    .map(([unit, qty]) => `${qty.toFixed(1)} ${unit}`)
+    .join(', ') || '0'
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
   const fmt = (n: number) => `${currency} ${n.toFixed(2)}`
 
@@ -126,7 +139,7 @@ export default function PurchaseReport() {
         {report.length > 0 && (
           <div className="rpt-actions no-print">
             <button className="rpt-btn rpt-btn-print" onClick={printReport}><i className="fa fa-print" style={{ marginRight: 6 }} />Print</button>
-            <PDFDownloadLink document={<PurchaseReportPDF startDate={startDate} endDate={endDate} report={report} totals={{ totalQty, totalAmount }} />} fileName={`purchase-report-${startDate}-to-${endDate}.pdf`}>
+            <PDFDownloadLink document={<PurchaseReportPDF startDate={startDate} endDate={endDate} report={report} totals={{ totalQty: totalQtyDisplay, totalAmount }} />} fileName={`purchase-report-${startDate}-to-${endDate}.pdf`}>
               {({ loading: pdfL }) => <button className="rpt-btn rpt-btn-pdf">{pdfL ? 'Preparing…' : <><i className="fa fa-file-pdf-o" style={{ marginRight: 6 }} />Download PDF</>}</button>}
             </PDFDownloadLink>
             <span style={{ marginLeft: 'auto', color: '#6b7280', fontSize: 12 }}>{totalPurchases} purchase orders &nbsp;·&nbsp; {startDate} → {endDate}</span>
@@ -151,7 +164,7 @@ export default function PurchaseReport() {
                 <div className="kpi-card blue"><div className="kpi-label">Total Orders</div><div className="kpi-value blue">{totalPurchases}</div></div>
                 <div className="kpi-card amber"><div className="kpi-label">Total Amount</div><div className="kpi-value amber">{fmt(totalAmount)}</div></div>
                 <div className="kpi-card purple"><div className="kpi-label">Total Items</div><div className="kpi-value purple">{totalItems}</div></div>
-                <div className="kpi-card"><div className="kpi-label">Total Qty</div><div className="kpi-value">{totalQty.toFixed(1)}</div></div>
+                <div className="kpi-card"><div className="kpi-label">Total Qty</div><div className="kpi-value" style={{ fontSize: 14 }}>{totalQtyDisplay}</div></div>
               </div>
 
               {report.map(purchase => (
@@ -193,7 +206,7 @@ export default function PurchaseReport() {
               <div className="overall-total">
                 <div style={{ display: 'flex', gap: 32 }}>
                   <div><div className="kpi-label">Total Orders</div><div style={{ fontWeight: 800, fontSize: 18 }}>{totalPurchases}</div></div>
-                  <div><div className="kpi-label">Total Qty</div><div style={{ fontWeight: 800, fontSize: 18 }}>{totalQty.toFixed(1)}</div></div>
+                  <div><div className="kpi-label">Total Qty</div><div style={{ fontWeight: 800, fontSize: 14 }}>{totalQtyDisplay}</div></div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="kpi-label">Total Purchase Amount</div>

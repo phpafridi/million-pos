@@ -18,7 +18,7 @@ export async function AddDamageProductAction(formData: FormData) {
         // ✅ Fetch full product details
         const product = await prisma.tbl_product.findUnique({
             where: { product_id },
-            include: { subcategory: { include: { category: true } } }, // if relations exist
+            include: { category: true }, // if relations exist
         })
 
         if (!product) {
@@ -35,7 +35,7 @@ export async function AddDamageProductAction(formData: FormData) {
                 shop_id,
                 product_code: product.product_code, // must be String in both schemas
                 product_name: product.product_name,
-                category: product.subcategory?.category?.category_name || 'Unknown',
+                category: product.category?.category_name || 'Unknown',
                 qty: Number(qty), // Convert to number
                 note,
                 decrease: decrease ? 1 : 0,

@@ -22,7 +22,7 @@ export default function AddProduct() {
     const [codeError, setCodeError] = useState('')
 
     const initialForm = {
-        product_code: '', product_name: '', sku: '', product_note: '', category_id: '', subcategory_id: '1', tax_id: '', image: '', buying_price: '',
+        product_code: '', product_name: '', sku: '', product_note: '', category_id: '', tax_id: '', image: '', buying_price: '',
         selling_price: '', start_date: '', end_date: '', special_offer_price: '', product_quantity: '', notify_bellow_quantity: '',
         tag: '', measurement_units: '', packet_size: '',
         // ADDED: Expiration date fields
@@ -73,7 +73,7 @@ export default function AddProduct() {
                 if (taxJson.success) { setTaxes(taxJson.data); if (taxJson.data?.length > 0) setForm(prev => ({ ...prev, tax_id: String(taxJson.data[0].tax_id) })); }
 
                 const catJson = await categoryRes.json();
-                if (catJson.success) { setCategories(catJson.data); if (catJson.data?.length > 0) setForm(prev => ({ ...prev, category_id: String(catJson.data[0].category_id) })); }
+                if (catJson.success) { setCategories(catJson.data); }
 
                 const unitJson = await unitRes.json();
                 if (unitJson.success) setMeasurementUnits(unitJson.data);
@@ -86,9 +86,6 @@ export default function AddProduct() {
         };
         loadData();
     }, []);
-
-    // Fetch subcategories when category changes
-    
 
     // Real-time product code validation
     useEffect(() => {
@@ -122,7 +119,6 @@ export default function AddProduct() {
     // Handlers
     const handleChangeSelectCategory = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setForm({ ...form, [e.target.name]: e.target.value });
-        if (e.target.name === "category_id") setForm(prev => ({ ...prev, subcategory_id: "" }));
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,6 +180,18 @@ export default function AddProduct() {
                 setLoading(false);
                 return
             }
+
+            // Validate category — this used to silently default to
+            // whichever category loaded first, which is exactly what
+            // caused products to save under the wrong category without
+            // anyone noticing.
+            if (!form.category_id) {
+                toast.error('Please select a category!')
+                setLoading(false);
+                return
+            }
+
+
 
             // Check for duplicate product code before submitting
             const isDuplicate = await checkProductCode(form.product_code)
@@ -333,7 +341,7 @@ export default function AddProduct() {
                                         className="ap-select"
                                         placeholder="Select category…"
                                         value={String(form.category_id)}
-                                        onChange={(v) => setForm(prev => ({ ...prev, category_id: v, subcategory_id: '' }))}
+                                        onChange={(v) => setForm(prev => ({ ...prev, category_id: v }))}
                                         options={categories.map(cat => ({ value: String(cat.category_id), label: cat.category_name }))}
                                     />
                                 </div>

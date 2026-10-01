@@ -137,7 +137,7 @@ export async function POST(
     const sku = getString(formData, "sku") || null;
     const product_name = getString(formData, "product_name");
     const product_note = getString(formData, "product_note");
-    const subcategory_id = getInteger(formData, "subcategory_id");
+    const category_id = getInteger(formData, "category_id");
     const tax_id = getInteger(formData, "tax_id");
     const measurement_units = getString(formData, "measurement_units");
     
@@ -225,9 +225,9 @@ export async function POST(
       );
     }
     
-    if (!subcategory_id) {
+    if (!category_id) {
       return NextResponse.json(
-        { success: false, error: "Subcategory is required" },
+        { success: false, error: "Category is required" },
         { status: 400 }
       );
     }
@@ -249,7 +249,8 @@ export async function POST(
           sku,
           product_name,
           product_note,
-          subcategory_id,
+          category_id,
+          subcategory_id: null,
           tax_id,
           measurement_units,
           packet_size,

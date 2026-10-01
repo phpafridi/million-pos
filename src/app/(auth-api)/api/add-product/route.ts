@@ -113,7 +113,6 @@ export async function POST(request: Request) {
     const product_name = getString(data, "product_name");
     const product_note = getString(data, "product_note");
     const category_id = getInteger(data, "category_id");
-    const subcategory_id = getInteger(data, "subcategory_id");
     const tax_id = getInteger(data, "tax_id");
     
     // Price fields - decimal
@@ -198,6 +197,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!category_id) {
+      return NextResponse.json(
+        { success: false, error: "Category is required" },
+        { status: 400 }
+      );
+    }
+
     // Begin transaction for data consistency
     const result = await prisma.$transaction(async (prisma) => {
       // 1. Create product
@@ -207,7 +213,8 @@ export async function POST(request: Request) {
           product_code,
           product_name,
           product_note,
-          subcategory_id : 1,
+          category_id,
+          subcategory_id: null,
           tax_id,
           status: 1,
           barcode: product_code, // Using product code as barcode for now
@@ -401,7 +408,7 @@ export async function GET() {
     required_fields: [
       "product_code",
       "product_name",
-      "subcategory_id",
+      "category_id",
       "tax_id",
       "buying_price",
       "selling_price",

@@ -52,7 +52,7 @@ export async function SaveBatchPurchase(data: BatchPurchasePayload) {
     const productIds = data.cart.map(i => i.product_id)
     const productDetails = await prisma.tbl_product.findMany({
       where: { product_id: { in: productIds } },
-      select: { product_id: true, product_code: true, product_name: true, subcategory: { select: { category: { select: { category_name: true } } } } },
+      select: { product_id: true, product_code: true, product_name: true, category: { select: { category_name: true } } },
     })
     const productMap = new Map(productDetails.map(p => [p.product_id, p]))
 
@@ -121,7 +121,7 @@ export async function SaveBatchPurchase(data: BatchPurchasePayload) {
             shop_id: shopId,
             product_code: product?.product_code || '',
             product_name: product?.product_name || '',
-            category: product?.subcategory?.category?.category_name || 'Unknown',
+            category: product?.category?.category_name || 'Unknown',
             qty: damagedQty,
             note: `Arrived damaged from supplier "${supplier.supplier_name}" — purchase ref ${data.purchase_ref || purchaseId}`,
             decrease: 0, // never entered sellable inventory — nothing to deduct

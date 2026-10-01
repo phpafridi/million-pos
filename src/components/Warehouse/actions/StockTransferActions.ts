@@ -413,7 +413,7 @@ export async function LogDamageReturnReceipt(transfer_id: number, loggedBy: stri
   const productIds = transfer.items.map((i) => i.product_id)
   const products = await prisma.tbl_product.findMany({
     where: { product_id: { in: productIds } },
-    include: { subcategory: { include: { category: true } } },
+    include: { category: true },
   })
   const productMap = new Map(products.map((p) => [p.product_id, p]))
 
@@ -426,7 +426,7 @@ export async function LogDamageReturnReceipt(transfer_id: number, loggedBy: stri
           shop_id: transfer.to_shop_id,
           product_code: product?.product_code || '',
           product_name: item.product_name,
-          category: product?.subcategory?.category?.category_name || 'Unknown',
+          category: product?.category?.category_name || 'Unknown',
           qty: item.quantity,
           note: `Damage return from franchise via transfer ${transfer.transfer_number}`,
           decrease: 0, // never was in sellable inventory here — nothing to deduct

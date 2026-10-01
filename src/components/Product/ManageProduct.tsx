@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import FetchProducts from './actions/FetchProduct'
 import Link from 'next/link'
@@ -26,6 +26,7 @@ type Product = {
   tax_id: number | null
   packet_size: number
   inventories: Inventory[]
+  category_name: string | null
 }
 
 // Helper function to convert Decimal fields to numbers
@@ -42,6 +43,7 @@ const convertProductToNumberTypes = (product: any): Product => {
     barcode: product.barcode,
     tax_id: product.tax_id,
     packet_size: Number(product.packet_size) || 0, // Convert Decimal to number
+    category_name: product.category?.category_name || null,
     inventories: (product.inventories || []).map((inv: any) => ({
       inventory_id: inv.inventory_id,
       product_id: inv.product_id,
@@ -57,6 +59,17 @@ export default function ManageProduct() {
   const canDelete = hasPermission(session, 'action:delete-product')
   const [products, setProducts] = useState<Product[]>([])
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+
+  const toggleCategoryCollapse = (categoryName: string) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(categoryName)) next.delete(categoryName)
+      else next.add(categoryName)
+      return next
+    })
+  }
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -90,15 +103,23 @@ export default function ManageProduct() {
 
   useEffect(() => {
     const lowerSearch = search.toLowerCase()
-    setFilteredProducts(
-      products.filter(
-        (p) =>
-          p.product_name.toLowerCase().includes(lowerSearch) ||
-          (p.product_code ?? '').toLowerCase().includes(lowerSearch)
-      )
+    const filtered = products.filter(
+      (p) =>
+        (p.product_name.toLowerCase().includes(lowerSearch) ||
+          (p.product_code ?? '').toLowerCase().includes(lowerSearch)) &&
+        (!categoryFilter || p.category_name === categoryFilter)
     )
+    // Sort by category so products in the same category end up grouped
+    // together in the table, not scattered — uncategorized products
+    // (no category_name) sort to the end.
+    filtered.sort((a, b) => {
+      const catA = a.category_name || '\uffff'
+      const catB = b.category_name || '\uffff'
+      return catA.localeCompare(catB) || a.product_name.localeCompare(b.product_name)
+    })
+    setFilteredProducts(filtered)
     setCurrentPage(1)
-  }, [search, products])
+  }, [search, products, categoryFilter])
 
   const toggleStatus = async (product: Product) => {
     try {
@@ -152,6 +173,19 @@ export default function ManageProduct() {
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                     />
+                    <select
+                      className="form-control"
+                      style={{ maxWidth: '200px' }}
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                    >
+                      <option value="">All Categories</option>
+                      {Array.from(new Set(products.map((p) => p.category_name).filter((c): c is string => Boolean(c))))
+                        .sort()
+                        .map((cat) => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                    </select>
                     <button
                       className={`btn ${showAll ? 'btn-primary' : 'btn-default'}`}
                       onClick={() => setShowAll(!showAll)}
@@ -168,6 +202,7 @@ export default function ManageProduct() {
                         <th className="text-center">SL</th>
                         <th className="text-center">Product Code</th>
                         <th className="text-center">Product Name</th>
+                        <th className="text-center">Category</th>
                         <th className="text-center">Status</th>
                         
                         <th className="text-center">Stock</th>
@@ -177,21 +212,38 @@ export default function ManageProduct() {
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan={7} className="text-center">
+                          <td colSpan={8} className="text-center">
                             <strong>Loading products...</strong>
                           </td>
                         </tr>
                       ) : paginatedProducts.length > 0 ? (
                         paginatedProducts.map((product, index) => {
                           const { displayQty, displayUnit } = getDisplayQuantity(product)
-                          
+                          const prevCategory = index > 0 ? paginatedProducts[index - 1].category_name : null
+                          const showCategoryHeader = product.category_name !== prevCategory
+                          const groupKey = product.category_name || 'Uncategorized'
+                          const isCollapsed = collapsedCategories.has(groupKey)
+
                           return (
-                            <tr key={product.product_id}>
+                            <React.Fragment key={product.product_id}>
+                              {showCategoryHeader && (
+                                <tr
+                                  onClick={() => toggleCategoryCollapse(groupKey)}
+                                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                                >
+                                  <td colSpan={8} style={{ background: '#f3f4f6', fontWeight: 700, padding: '8px 12px' }}>
+                                    <span style={{ display: 'inline-block', width: 16 }}>{isCollapsed ? '▶' : '▼'}</span> {groupKey}
+                                  </td>
+                                </tr>
+                              )}
+                              {!isCollapsed && (
+                              <tr>
                               <td className="text-center">
                                 {(currentPage - 1) * itemsPerPage + (index + 1)}
                               </td>
                               <td className="text-center">{product.product_code}</td>
                               <td className="text-center">{product.product_name}</td>
+                              <td className="text-center">{product.category_name || <span className="text-muted">—</span>}</td>
                               <td
                                 className={`text-center font-bold ${
                                   product.status === 1 ? 'text-green-600' : 'text-red-600'
@@ -219,12 +271,14 @@ export default function ManageProduct() {
                                   </button>
                                 )}
                               </td>
-                            </tr>
+                              </tr>
+                              )}
+                            </React.Fragment>
                           )
                         })
                       ) : (
                         <tr>
-                          <td colSpan={7} className="text-center">
+                          <td colSpan={8} className="text-center">
                             No products found
                           </td>
                         </tr>

@@ -18,7 +18,7 @@ export async function ProductById(id: string) {
       attributes: true,
       tags: true,
       tax: true,
-      subcategory: { include: { category: true } },
+      category: true,
       // ADDED: Include product images if you have them
       images: true
     }

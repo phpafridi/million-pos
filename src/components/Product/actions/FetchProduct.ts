@@ -24,6 +24,7 @@ export default async function FetchProduct(overrideShopId?: number) {
       tier_prices: { where: shopFilter },
       tax: true,
       attributes: true,
+      category: true,
     }
   });
   

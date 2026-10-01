@@ -199,6 +199,7 @@ model tbl_category {
   created_datetime DateTime @default(now()) @db.Timestamp(0)
 
   subcategories tbl_subcategory[]
+  products      tbl_product[]
 
   @@map("tbl_category")
 }
@@ -408,7 +409,8 @@ model tbl_product {
   product_name      String    @db.VarChar(100)
   product_note      String    @db.Text
   status            Int?      @default(1) @db.TinyInt
-  subcategory_id    Int
+  category_id       Int       // direct category assignment — the real, primary classification
+  subcategory_id    Int?      // optional, finer-grained grouping within a category — not required
   barcode_path      String    @db.VarChar(300)
   barcode           String    @db.VarChar(100)
   sku               String?   @db.VarChar(100)
@@ -416,7 +418,8 @@ model tbl_product {
   measurement_units String
   packet_size       Decimal?  @db.Decimal(10,1) @default(0)  // CHANGED: (10,2) → (10,1)
 
-  subcategory      tbl_subcategory        @relation(fields: [subcategory_id], references: [subcategory_id])
+  category         tbl_category           @relation(fields: [category_id], references: [category_id])
+  subcategory      tbl_subcategory?       @relation(fields: [subcategory_id], references: [subcategory_id])
   tax              tbl_tax                @relation(fields: [tax_id], references: [tax_id])
   attributes       tbl_attribute[]
   damages          tbl_damage_product[]

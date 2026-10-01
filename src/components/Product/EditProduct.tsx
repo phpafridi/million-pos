@@ -23,7 +23,7 @@ export default function EditProduct({ productId }: Props) {
   const [loadingData, setLoadingData] = useState(true) // fetching dropdowns
 
   const initialForm = {
-    product_code: '', product_name: '', sku: '', product_note: '', category_id: '', subcategory_id: '', tax_id: '', image: '', buying_price: '',
+    product_code: '', product_name: '', sku: '', product_note: '', category_id: '', tax_id: '', image: '', buying_price: '',
     selling_price: '', start_date: '', end_date: '', special_offer_price: '', product_quantity: '', notify_bellow_quantity: '',
     tag: '', measurement_units: '', packet_size: '',
     // ADDED: Expiration date fields
@@ -32,7 +32,7 @@ export default function EditProduct({ productId }: Props) {
 
   const [form, setForm] = useState(initialForm);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [productOwnCategory, setProductOwnCategory] = useState<Category | null>(null);
   const [taxes, setTaxes] = useState<Tax[]>([]);
   const [measurementUnits, setMeasurementUnits] = useState<MeasurementUnit[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -73,24 +73,6 @@ export default function EditProduct({ productId }: Props) {
     loadData();
   }, []);
 
-  // Fetch subcategories when category changes
-  useEffect(() => {
-    if (!form.category_id) return;
-    const fetchSubcategories = async () => {
-      try {
-        setLoadingData(true);
-        const res = await fetch(`/api/subcategories/${form.category_id}`);
-        const data = await res.json();
-        if (data.success) setSubcategories(data.data);
-      } catch (err) {
-        console.error("Failed to fetch subcategories", err);
-      } finally {
-        setLoadingData(false);
-      }
-    };
-    fetchSubcategories();
-  }, [form.category_id]);
-
   // Load product data for editing
   useEffect(() => {
     if (!productId) return;
@@ -104,14 +86,26 @@ export default function EditProduct({ productId }: Props) {
           return;
         }
 
+        // The product's real category might not be in the standard
+        // scoped category list (e.g. it's private to a different
+        // franchise, or a sharing setting changed after this product
+        // was created) — without this, the dropdown would show empty
+        // even though the product genuinely has a valid category.
+        // Stored separately (not merged into `categories` directly)
+        // since that state is also being set independently by the
+        // categories-fetch effect, and whichever finishes second would
+        // silently overwrite the other's update.
+        if (product.category) {
+          setProductOwnCategory(product.category)
+        }
+
         // fill main form fields exactly as AddProduct naming
         setForm({
           product_code: product.product_code || '',
           product_name: product.product_name || '',
           sku: (product as any).sku || '',
           product_note: product.product_note || '',
-          category_id: product.subcategory?.category?.category_id?.toString() || '',
-          subcategory_id: product.subcategory?.subcategory_id?.toString() || '',
+          category_id: product.category?.category_id?.toString() || '',
           tax_id: product.tax?.tax_id?.toString() || '',
           image: '',
           buying_price: product.prices?.[0]?.buying_price?.toString() || '',
@@ -155,16 +149,6 @@ export default function EditProduct({ productId }: Props) {
           setExistingImagePath(null);
         }
 
-        // load subcategories for selected category
-        if (product.subcategory?.category?.category_id) {
-          try {
-            const res = await fetch(`/api/subcategories/${product.subcategory.category.category_id}`);
-            const json = await res.json();
-            if (json.success) setSubcategories(json.data);
-          } catch (err) {
-            // ignore
-          }
-        }
       } catch (err) {
         console.error("Failed to load product", err);
         toast.error("Failed to load product data");
@@ -178,7 +162,6 @@ export default function EditProduct({ productId }: Props) {
   // Handlers (kept identical to AddProduct)
   const handleChangeSelectCategory = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
-    if (e.target.name === "category_id") setForm(prev => ({ ...prev, subcategory_id: "" }));
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -358,18 +341,11 @@ export default function EditProduct({ productId }: Props) {
                           className="form-control"
                           placeholder="Select Category"
                           value={String(form.category_id)}
-                          onChange={(v) => setForm(prev => ({ ...prev, category_id: v, subcategory_id: '' }))}
-                          options={categories.map(cat => ({ value: String(cat.category_id), label: cat.category_name }))}
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label>Subcategory</label>
-                        <SearchableSelect
-                          className="form-control"
-                          placeholder="Select Subcategory"
-                          value={String(form.subcategory_id)}
-                          onChange={(v) => setForm(prev => ({ ...prev, subcategory_id: v }))}
-                          options={subcategories.map(sub => ({ value: String(sub.subcategory_id), label: sub.subcategory_name }))}
+                          onChange={(v) => setForm(prev => ({ ...prev, category_id: v }))}
+                          options={(productOwnCategory && !categories.some(c => c.category_id === productOwnCategory.category_id)
+                            ? [...categories, productOwnCategory]
+                            : categories
+                          ).map(cat => ({ value: String(cat.category_id), label: cat.category_name }))}
                         />
                       </div>
                       <div className="form-group">

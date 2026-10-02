@@ -7,7 +7,7 @@ import Link from 'next/link'
 
 type Purchase = {
   purchase_id: number
-  purchase_order_number: number
+  purchase_order_number: string
   supplier_name: string
   grand_total: number
   purchase_ref: string
@@ -124,10 +124,10 @@ export default function PurchaseHistory() {
                         <td>
                           {canView ? (
                             <a href={`/dashboard/manage-purchase/invoice/${p.purchase_id}`}>
-                              PUR-{p.purchase_order_number}
+                              {p.purchase_order_number.includes('PUR') ? p.purchase_order_number : `PUR-${p.purchase_order_number}`}
                             </a>
                           ) : (
-                            <span>PUR-{p.purchase_order_number}</span>
+                            <span>{p.purchase_order_number.includes('PUR') ? p.purchase_order_number : `PUR-${p.purchase_order_number}`}</span>
                           )}
                         </td>
                         <td>{p.supplier_name}</td>

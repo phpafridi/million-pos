@@ -2,6 +2,8 @@
 
 import { prisma } from '@/lib/prisma'
 import { getShopScope, scopeShopIdForWrite } from '@/lib/getShopScope'
+import { nextPurchaseNumber } from '@/lib/documentNumbers'
+import { toFriendlyError } from '@/lib/friendlyError'
 
 type CartItem = {
   product_id: number
@@ -34,6 +36,7 @@ export async function SavePurchase(data: PurchasePayload) {
     if (!supplier) throw new Error('Supplier not found')
 
     const grandTotal = data.cart.reduce((sum, item) => sum + item.qty * item.price, 0)
+    const purchaseOrderNumber = await nextPurchaseNumber(shopId)
 
     // ── 2. Fetch products + inventories + prices upfront ────────────────────
     const productIds = data.cart.map(i => i.product_id)
@@ -58,7 +61,7 @@ export async function SavePurchase(data: PurchasePayload) {
         grand_total, purchase_ref, payment_method, payment_ref,
         purchase_by, datetime
       ) VALUES (
-        ${shopId}, ${Math.floor(100000 + Math.random() * 900000)},
+        ${shopId}, ${purchaseOrderNumber},
         ${data.supplier_id}, ${supplier.supplier_name},
         ${grandTotal}, ${data.purchase_ref}, ${data.payment_method}, '',
         'Admin', ${purchaseDate}
@@ -121,6 +124,6 @@ export async function SavePurchase(data: PurchasePayload) {
     }
   } catch (err: any) {
     console.error('❌ SavePurchase error:', err)
-    return { success: false, message: err.message || 'Failed to save purchase' }
+    return { success: false, message: toFriendlyError(err) }
   }
 }

@@ -493,7 +493,7 @@ model tbl_product_tag {
 model tbl_purchase {
   purchase_id           Int      @id @default(autoincrement())
   shop_id               Int      @default(1)
-  purchase_order_number Int
+  purchase_order_number String   @db.VarChar(50)
   supplier_id           Int
   supplier_name         String   @db.VarChar(128)
   grand_total           Decimal  @db.Decimal(10,2)

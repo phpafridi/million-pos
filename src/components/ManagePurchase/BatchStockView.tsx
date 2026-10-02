@@ -9,7 +9,7 @@ type Batch = {
   batch_number: string
   product_id: number
   product: { product_name: string; product_code: string; measurement_units: string } | null
-  purchase: { purchase_order_number: number; supplier_name: string } | null
+  purchase: { purchase_order_number: string; supplier_name: string } | null
   qty: number
   qty_remaining: number
   buying_price: number

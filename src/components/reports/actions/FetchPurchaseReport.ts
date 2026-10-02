@@ -5,7 +5,7 @@ import { getShopScope, scopeWhere } from '@/lib/getShopScope'
 
 export interface PurchaseReportRow {
   id: number
-  ref: number
+  ref: string
   supplier: string
   date: string
   items: {

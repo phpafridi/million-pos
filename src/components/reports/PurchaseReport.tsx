@@ -170,7 +170,7 @@ export default function PurchaseReport() {
               {report.map(purchase => (
                 <div key={purchase.id} className="pur-block">
                   <div className="pur-head" onClick={() => setExpandedId(expandedId === purchase.id ? null : purchase.id)}>
-                    <span className="pur-ref">PUR-{purchase.ref}</span>
+                    <span className="pur-ref">{purchase.ref.includes('PUR') ? purchase.ref : `PUR-${purchase.ref}`}</span>
                     <div className="pur-head-info">
                       <span><i className="fa fa-truck" style={{ marginRight: 5 }} />{purchase.supplier}</span>
                       {isSuperAdmin && purchase.shopName && (

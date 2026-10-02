@@ -5,6 +5,8 @@ import { getShopScope, scopeShopIdForWrite, scopeWhere } from '@/lib/getShopScop
 import { logActivity } from '@/lib/auditLog'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { nextPurchaseNumber } from '@/lib/documentNumbers'
+import { toFriendlyError } from '@/lib/friendlyError'
 
 export type BatchItem = {
   product_id: number
@@ -69,7 +71,7 @@ export async function SaveBatchPurchase(data: BatchPurchasePayload) {
     const priceMap = new Map(prices.map(p => [p.product_id, p]))
 
     // ── 5. INSERT purchase header ────────────────────────────────────────────
-    const purchaseOrderNumber = Math.floor(100000 + Math.random() * 900000)
+    const purchaseOrderNumber = await nextPurchaseNumber(shopId)
     await prisma.$executeRaw`
       INSERT INTO tbl_purchase (
         shop_id, purchase_order_number, supplier_id, supplier_name,
@@ -234,7 +236,7 @@ export async function SaveBatchPurchase(data: BatchPurchasePayload) {
     }
   } catch (err: any) {
     console.error('❌ SaveBatchPurchase error:', err)
-    return { success: false, message: err.message || 'Failed to save batch purchase' }
+    return { success: false, message: toFriendlyError(err) }
   }
 }
 

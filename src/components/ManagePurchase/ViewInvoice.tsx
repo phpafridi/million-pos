@@ -70,7 +70,7 @@ export default function ViewInvoice({ id }: Props) {
         }
 
         const mapped: PurchaseData = {
-          purchase_order_number: `PUR${p.purchase_order_number}`,
+          purchase_order_number: p.purchase_order_number.includes('PUR') ? p.purchase_order_number : `PUR${p.purchase_order_number}`,
           supplier_name: p.supplier?.supplier_name || '',
           supplier_address: p.supplier?.address || '',
           supplier_phone: p.supplier?.phone || '',

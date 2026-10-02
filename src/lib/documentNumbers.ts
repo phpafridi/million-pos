@@ -61,6 +61,21 @@ export async function nextTailorOrderNumber(shop_id: number): Promise<string> {
   return `${numberPrefix}${String(lastNum + 1).padStart(4, '0')}`
 }
 
+/** e.g. "MLN-2-PUR-0001" — purchases use the same brand-prefixed scheme, replacing what used to be a random 6-digit number with no sequencing or branding at all. */
+export async function nextPurchaseNumber(shop_id: number): Promise<string> {
+  const prefix = await getDocumentPrefix()
+  const numberPrefix = `${prefix}-${shop_id}-PUR-`
+
+  const last = await prisma.tbl_purchase.findFirst({
+    where: { shop_id, purchase_order_number: { startsWith: numberPrefix } },
+    orderBy: { purchase_id: 'desc' },
+    select: { purchase_order_number: true },
+  })
+
+  const lastNum = last?.purchase_order_number ? parseInt(last.purchase_order_number.replace(numberPrefix, ''), 10) || 0 : 0
+  return `${numberPrefix}${String(lastNum + 1).padStart(4, '0')}`
+}
+
 /** e.g. "MLN-2-GRN-0001" — Goods Receive Notes use the same brand-prefixed scheme. */
 export async function nextGrnNumber(shop_id: number): Promise<string> {
   const prefix = await getDocumentPrefix()

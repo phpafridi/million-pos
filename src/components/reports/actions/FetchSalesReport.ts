@@ -6,7 +6,7 @@ import { getShopScope } from '@/lib/getShopScope'
 export interface SalesReportRow {
   id: number
   invoiceDate: Date
-  invoiceNo: number | null
+  invoiceNo: string | null
   buyingCost: number
   sellingCost: number
   tax: number
@@ -36,6 +36,7 @@ export default async function FetchSalesReport(
           i.invoice_id,
           i.invoice_date,
           i.invoice_no,
+          i.invoice_number,
           o.order_id,
           CAST(o.grand_total     AS DOUBLE) AS grand_total,
           CAST(o.discount_amount AS DOUBLE) AS discount_amount,
@@ -56,6 +57,7 @@ export default async function FetchSalesReport(
           i.invoice_id,
           i.invoice_date,
           i.invoice_no,
+          i.invoice_number,
           o.order_id,
           CAST(o.grand_total     AS DOUBLE) AS grand_total,
           CAST(o.discount_amount AS DOUBLE) AS discount_amount,
@@ -99,7 +101,7 @@ export default async function FetchSalesReport(
     rows.push({
       id:          Number(inv.invoice_id),
       invoiceDate: new Date(inv.invoice_date),
-      invoiceNo:   inv.invoice_no != null ? Number(inv.invoice_no) : null,
+      invoiceNo:   inv.invoice_number ?? null,
       buyingCost,
       sellingCost,
       tax,

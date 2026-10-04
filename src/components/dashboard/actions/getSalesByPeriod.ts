@@ -3,10 +3,17 @@ import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
 
 async function sumSince(since: Date, allShops: boolean, shopId: number | null): Promise<number> {
-  const result: any[] = allShops
+  const posResult: any[] = allShops
     ? await prisma.$queryRaw`SELECT COALESCE(SUM(CAST(grand_total AS DOUBLE)),0) AS v FROM tbl_order WHERE order_status IN (2,4) AND order_date >= ${since}`
     : await prisma.$queryRaw`SELECT COALESCE(SUM(CAST(grand_total AS DOUBLE)),0) AS v FROM tbl_order WHERE order_status IN (2,4) AND order_date >= ${since} AND shop_id = ${shopId}`
-  return Number(result[0]?.v || 0)
+
+  // Cash-basis, same as getRevenue.ts — sums what's actually been paid
+  // on tailor orders, not their full order value.
+  const tailorResult: any[] = allShops
+    ? await prisma.$queryRaw`SELECT COALESCE(SUM(CAST(advance_paid AS DOUBLE)),0) AS v FROM tbl_tailor_order WHERE status != 'cancelled' AND order_date >= ${since}`
+    : await prisma.$queryRaw`SELECT COALESCE(SUM(CAST(advance_paid AS DOUBLE)),0) AS v FROM tbl_tailor_order WHERE status != 'cancelled' AND order_date >= ${since} AND shop_id = ${shopId}`
+
+  return Number(posResult[0]?.v || 0) + Number(tailorResult[0]?.v || 0)
 }
 
 export async function getSalesByPeriod() {

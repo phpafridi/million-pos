@@ -8,6 +8,12 @@ export type NavItem = {
 export const navigationMenus: NavItem[] = [
   
   {
+    title: 'Dashboard',
+    children: [
+      { title: 'View Dashboard', path: '/dashboard' },
+    ],
+  },
+  {
     title: 'Order Process',
     children: [
       { title: 'New Order', path: '/dashboard/order-process/new-order' },

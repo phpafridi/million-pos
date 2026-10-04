@@ -51,9 +51,19 @@ export async function middleware(request: NextRequest) {
 
     const roles = (token.roles as string[]) || [];
 
-    // `/dashboard` root → send to first allowed page
+    // `/dashboard` root — if the user has the actual Dashboard
+    // permission, let them see it. Otherwise send them to their first
+    // allowed page instead. (The old check here looked for any role
+    // starting with "/dashboard", which matches every single subpage
+    // too — e.g. "/dashboard/order-process/manage-order" — so it never
+    // actually checked for dashboard access specifically, and always
+    // redirected away from the real dashboard regardless of what was
+    // granted.)
     if (pathname === "/dashboard") {
-      const firstAllowed = roles.find((r) => r.startsWith("/dashboard"));
+      if (roles.includes("/dashboard")) {
+        return NextResponse.next();
+      }
+      const firstAllowed = roles.find((r) => r.startsWith("/dashboard/"));
       return NextResponse.redirect(new URL(firstAllowed || "/", request.url));
     }
 

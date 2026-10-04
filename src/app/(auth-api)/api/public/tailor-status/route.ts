@@ -1,15 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { STATUS_LABELS } from "@/lib/tailorStatusLabels";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_LABELS: Record<string, string> = {
-  received: "Received",
-  in_process: "In Process",
-  ready: "Ready for Pickup",
-  delivered: "Delivered",
-  cancelled: "Cancelled",
-};
 
 /**
  * Public status-lookup endpoint for an external website: a customer logs

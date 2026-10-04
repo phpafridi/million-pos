@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getShopScope, scopeWhere } from '@/lib/getShopScope'
+import { STATUS_LABELS } from '@/lib/tailorStatusLabels'
 
 export type TailorReportData = {
   dueSoon: {
@@ -37,14 +38,6 @@ export type TailorReportData = {
   }
   garmentBreakdown: { garment_type: string; count: number; total_price: number }[]
   topCustomers: { customer_id: number; customer_name: string; phone: string; order_count: number; total_spent: number; shops?: string }[]
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  received: 'Received',
-  in_process: 'In Process',
-  ready: 'Ready',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
 }
 
 export async function FetchTailorReport(startDate: string, endDate: string): Promise<TailorReportData> {

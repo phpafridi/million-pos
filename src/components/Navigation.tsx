@@ -101,7 +101,7 @@ export default function Navigation() {
   // watches deep reports across every franchise AND every warehouse
   // instead of doing any of that work itself.
   const HEAD_OFFICE_MENUS = new Set<string>([
-    '/',
+    '/dashboard',
     'Report',
     '/dashboard/reports/sales-report',
     '/dashboard/reports/customer-report',
@@ -198,9 +198,9 @@ export default function Navigation() {
     <ul className="sidebar-menu">
 
       {/* Dashboard */}
-      {hasRole('/') && (
-        <li className={pathname === '/' ? 'active' : undefined}>
-          <Link href="/"><i className="fa fa-dashboard"></i><span>Dashboard</span></Link>
+      {hasRole('/dashboard') && (
+        <li className={pathname === '/dashboard' ? 'active' : undefined}>
+          <Link href="/dashboard"><i className="fa fa-dashboard"></i><span>Dashboard</span></Link>
         </li>
       )}
 

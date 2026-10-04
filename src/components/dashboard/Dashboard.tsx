@@ -1,10 +1,17 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend,
+} from 'recharts'
 
 // Import server actions
 import { getProfit } from './actions/getProfit'
 import { getRecentOrders } from './actions/getRecentOrders'
+import { getRecentPurchases } from './actions/getRecentPurchases'
+import { getMonthlyRevenue, type MonthlyRevenuePoint } from './actions/getMonthlyRevenue'
+import { getTailorOrderQuantity } from './actions/getTailorOrderQuantity'
 import { getRevenue } from './actions/getRevenue'
 import { getSalesByPeriod } from './actions/getSalesByPeriod'
 import { getSalesQuantity } from './actions/getSalesQuantity'
@@ -21,10 +28,20 @@ type TopProduct = {
 
 type RecentOrder = {
   id: number
+  order_number: string
   customer: string
   date: string
-  status: number
+  status_label: string
   total: number
+  type: 'pos' | 'tailor'
+}
+
+type RecentPurchase = {
+  id: number
+  purchase_order_number: string
+  supplier_name: string
+  grand_total: number
+  date: string
 }
 
 type SalesPeriod = {
@@ -45,6 +62,9 @@ export default function Dashboard() {
   const [stockValue, setStockValue] = useState<number>(0)
   const [topProducts, setTopProducts] = useState<TopProduct[]>([])
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([])
+  const [recentPurchases, setRecentPurchases] = useState<RecentPurchase[]>([])
+  const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenuePoint[]>([])
+  const [tailorQty, setTailorQty] = useState<number>(0)
   const [salesPeriod, setSalesPeriod] = useState<SalesPeriod>({
     today: 0,
     week: 0,
@@ -66,6 +86,9 @@ export default function Dashboard() {
           stock,
           topProductsDataRaw,
           recentOrdersDataRaw,
+          recentPurchasesDataRaw,
+          monthlyRevenueDataRaw,
+          tailorQtyValue,
           salesByPeriodRaw,
           currencyData
         ] = await Promise.all([
@@ -75,6 +98,9 @@ export default function Dashboard() {
           getStockValue(),
           getTopProducts(),
           getRecentOrders(),
+          getRecentPurchases(),
+          getMonthlyRevenue(),
+          getTailorOrderQuantity(),
           getSalesByPeriod(),
           fetchCurrency() // fetch currency from DB
         ])
@@ -100,13 +126,29 @@ export default function Dashboard() {
         const recentOrdersData: RecentOrder[] = (recentOrdersDataRaw || []).map(
           (o: any) => ({
             id: o.order_id ?? o.id,
+            order_number: o.order_number ?? `#${o.order_id ?? o.id}`,
             customer: o.customer?.customer_name ?? o.customerName ?? 'Unknown',
             date: new Date(o.order_date ?? o.date).toLocaleDateString('en-PK'),
-            status: o.order_status ?? o.status ?? 0,
+            status_label: o.status_label ?? 'Unknown',
             total: o.grand_total ?? o.total ?? 0,
+            type: o.type ?? 'pos',
           })
         )
         setRecentOrders(recentOrdersData)
+
+        // Map Recent Purchases safely
+        const recentPurchasesData: RecentPurchase[] = (recentPurchasesDataRaw || []).map(
+          (p: any) => ({
+            id: p.id,
+            purchase_order_number: p.purchase_order_number,
+            supplier_name: p.supplier_name,
+            grand_total: p.grand_total,
+            date: new Date(p.datetime).toLocaleDateString('en-PK'),
+          })
+        )
+        setRecentPurchases(recentPurchasesData)
+        setMonthlyRevenue(monthlyRevenueDataRaw || [])
+        setTailorQty(tailorQtyValue || 0)
 
         // Map Sales Period safely
         setSalesPeriod({
@@ -219,6 +261,19 @@ export default function Dashboard() {
             </div>
 
             <div className="col-lg-3 col-sm-6 col-sx-12">
+              <div className="small-box bg-warning">
+                <div className="inner">
+                  <h2>{tailorQty}</h2>
+                  <p>Quantity of Tailor Orders</p>
+                </div>
+                <div className="icon">
+                  <i className="fa fa-scissors"></i>
+                </div>
+                <span className="small-box-footer">{currentMonth}</span>
+              </div>
+            </div>
+
+            <div className="col-lg-3 col-sm-6 col-sx-12">
               <div className="small-box bg-success">
                 <div className="inner">
                   <h2>{formatCurrency(stockValue)}</h2>
@@ -251,6 +306,38 @@ export default function Dashboard() {
             <div className="col-md-3 col-sm-6 col-xs-12">
               <h4>{salesPeriod.year}</h4>
               <small className="text-muted">This Year's Sales</small>
+            </div>
+          </div>
+
+          {/* ===== Monthly Revenue ===== */}
+          <div className="row">
+            <div className="col-md-12">
+              <div className="portlet">
+                <div className="portlet-heading">
+                  <h3 className="portlet-title text-dark text-uppercase">
+                    Monthly Revenue
+                  </h3>
+                </div>
+                <div className="portlet-body" style={{ padding: '20px 15px' }}>
+                  {monthlyRevenue.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart data={monthlyRevenue} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#eef0f4" />
+                        <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#6b7a99' }} />
+                        <YAxis tick={{ fontSize: 12, fill: '#6b7a99' }} tickFormatter={(v) => formatCurrency(v)} />
+                        <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                        <Legend />
+                        <Bar dataKey="pos" name="POS Sales" stackId="revenue" fill="#1a237e" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="tailor" name="Tailor Income" stackId="revenue" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="text-center" style={{ padding: '60px 0', color: '#6b7a99' }}>
+                      No revenue data yet for this period
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -315,7 +402,8 @@ export default function Dashboard() {
                     <table className="table no-margin">
                       <thead>
                         <tr>
-                          <th>Order ID</th>
+                          <th>Invoice / Order #</th>
+                          <th>Type</th>
                           <th>Customer</th>
                           <th>Date</th>
                           <th>Status</th>
@@ -325,17 +413,24 @@ export default function Dashboard() {
                       <tbody>
                         {recentOrders.length > 0 ? (
                           recentOrders.map((o) => (
-                            <tr key={o.id}>
-                              <td>{o.id}</td>
+                            <tr key={`${o.type}-${o.id}`}>
+                              <td>{o.order_number}</td>
+                              <td>
+                                {o.type === 'tailor' ? (
+                                  <span className="label label-info">Tailor</span>
+                                ) : (
+                                  <span className="label label-default">POS</span>
+                                )}
+                              </td>
                               <td>{o.customer}</td>
                               <td>{o.date}</td>
-                              <td>{mapOrderStatus(o.status)}</td>
+                              <td>{o.status_label}</td>
                               <td>{formatCurrency(o.total)}</td>
                             </tr>
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={5} className="text-center">
+                            <td colSpan={6} className="text-center">
                               No recent orders
                             </td>
                           </tr>
@@ -343,6 +438,54 @@ export default function Dashboard() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ===== Recent Purchases ===== */}
+        <div className="row">
+          <div className="col-md-12">
+            <div className="portlet">
+              <div className="portlet-heading">
+                <h3 className="portlet-title text-dark text-uppercase">
+                  Recent Purchases
+                </h3>
+              </div>
+              <div
+                className="portlet-body"
+                style={{ height: '400px', overflowY: 'auto' }}
+              >
+                <div className="table-responsive">
+                  <table className="table no-margin">
+                    <thead>
+                      <tr>
+                        <th>Purchase No</th>
+                        <th>Supplier</th>
+                        <th>Date</th>
+                        <th>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentPurchases.length > 0 ? (
+                        recentPurchases.map((p) => (
+                          <tr key={p.id}>
+                            <td>{p.purchase_order_number}</td>
+                            <td>{p.supplier_name}</td>
+                            <td>{p.date}</td>
+                            <td>{formatCurrency(p.grand_total)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={4} className="text-center">
+                            No recent purchases
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

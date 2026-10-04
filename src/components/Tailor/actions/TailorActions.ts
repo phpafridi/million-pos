@@ -1,6 +1,7 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
+import { STATUS_LABELS } from '@/lib/tailorStatusLabels'
 import { getShopScope, scopeShopIdForWrite, scopeWhere } from '@/lib/getShopScope'
 import { logActivity } from '@/lib/auditLog'
 import { sharedOrOwnWhere, shopIdForNewRecord, isSynced } from '@/lib/syncSettings'
@@ -182,13 +183,6 @@ function serializeCustomerMeasurements(customer: any) {
   }
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  received: 'Received',
-  in_process: 'In Process (Cutting/Stitching)',
-  ready: 'Ready for Pickup/Delivery',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
-}
 
 export type TailorStyleOptions = Record<string, boolean>
 

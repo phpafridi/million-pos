@@ -137,7 +137,8 @@ export default function ReturnModal({
     if (res.success) {
       if (photoFiles.length > 0 && res.return_id) {
         try {
-          await UploadEntityPhotos('return', res.return_id, photoFiles, processedBy)
+          const upload = await UploadEntityPhotos('return', res.return_id, photoFiles, processedBy)
+          if (!upload.success) toast.error(`Return processed, but the photos were not uploaded: ${upload.error}`)
         } catch (photoErr) {
           console.error('Failed to upload photos:', photoErr)
           toast.error('Return processed, but photos failed to upload')

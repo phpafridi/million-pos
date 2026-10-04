@@ -5,11 +5,21 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import { getShopScope, canManageUsers } from "@/lib/getShopScope";
 import { logActivity } from "@/lib/auditLog";
+import { rejectIfNotLoggedIn } from "@/lib/apiGuards";
+import { uploadSizeError } from "@/lib/uploadLimits";
 
 export async function POST(req: Request) {
   try {
+    // Reject anonymous callers before buffering what can now be a large body.
+    const denied = await rejectIfNotLoggedIn();
+    if (denied) return denied;
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
+    const sizeError = file ? uploadSizeError(file.size, "Photo") : null;
+    if (sizeError) {
+      return NextResponse.json({ error: sizeError }, { status: 413 });
+    }
     const name = formData.get("name") as string;
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;

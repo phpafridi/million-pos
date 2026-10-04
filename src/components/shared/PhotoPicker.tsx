@@ -1,5 +1,7 @@
 'use client'
 import React, { useRef, useState } from 'react'
+import { toast } from 'sonner'
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, formatFileSize, uploadSizeError } from '@/lib/uploadLimits'
 
 export default function PhotoPicker({ files, onChange, label = 'Photos' }: {
   files: File[]
@@ -12,9 +14,27 @@ export default function PhotoPicker({ files, onChange, label = 'Photos' }: {
   const handleSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || [])
     if (selected.length === 0) return
-    const combined = [...files, ...selected]
-    onChange(combined)
-    setPreviews((prev) => [...prev, ...selected.map((f) => URL.createObjectURL(f))])
+
+    // Every photo on a record travels to the server in ONE request, so the
+    // limit applies to their combined size, not just each photo alone.
+    let total = files.reduce((sum, f) => sum + f.size, 0)
+    const accepted: File[] = []
+    let skipped = 0
+    for (const f of selected) {
+      const tooBig = uploadSizeError(f.size, 'Photo')
+      if (tooBig) { toast.error(tooBig); continue }
+      if (total + f.size > MAX_UPLOAD_BYTES) { skipped++; continue }
+      accepted.push(f)
+      total += f.size
+    }
+    if (skipped > 0) {
+      toast.error(`${skipped} photo${skipped === 1 ? '' : 's'} not added — the photos on one record can total at most ${MAX_UPLOAD_MB} MB (currently ${formatFileSize(total)}).`)
+    }
+
+    if (accepted.length > 0) {
+      onChange([...files, ...accepted])
+      setPreviews((prev) => [...prev, ...accepted.map((f) => URL.createObjectURL(f))])
+    }
     if (inputRef.current) inputRef.current.value = ''
   }
 

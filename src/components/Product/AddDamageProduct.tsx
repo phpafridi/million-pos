@@ -125,7 +125,8 @@ export default function AddDamageProduct() {
 
     if (res.success && res.data && photoFiles.length > 0) {
       try {
-        await UploadEntityPhotos('damage_product', res.data.damage_product_id, photoFiles, session?.user?.name || session?.user?.email || 'Staff')
+        const upload = await UploadEntityPhotos('damage_product', res.data.damage_product_id, photoFiles, session?.user?.name || session?.user?.email || 'Staff')
+        if (!upload.success) toast.error(`Recorded, but the photos were not uploaded: ${upload.error}`)
       } catch (photoErr) {
         console.error('Failed to upload photos:', photoErr)
         toast.error('Recorded, but photos failed to upload')

@@ -4,12 +4,22 @@ import { writeFile } from "fs/promises";
 import { NextRequest, NextResponse } from "next/server";
 import { join } from "path";
 import { getShopScope, scopeWhere, canManageUsers } from "@/lib/getShopScope";
+import { rejectIfNotLoggedIn } from "@/lib/apiGuards";
+import { uploadSizeError } from "@/lib/uploadLimits";
 
 export async function POST(request: NextRequest) {
   try {
+    // Reject anonymous callers before buffering what can now be a large body.
+    const denied = await rejectIfNotLoggedIn();
+    if (denied) return denied;
+
     const data = await request.formData();
 
     const file = data.get("file") as File | null;
+    const sizeError = file ? uploadSizeError(file.size, "Photo") : null;
+    if (sizeError) {
+      return NextResponse.json({ error: sizeError }, { status: 413 });
+    }
     const name = data.get("name") as string;
     const old_email = data.get("old_email") as string; // original email
     const email = data.get("email") as string;

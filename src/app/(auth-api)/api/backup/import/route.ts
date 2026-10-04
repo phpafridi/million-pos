@@ -1,8 +1,23 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rejectIfNotHeadOffice } from "@/lib/apiGuards";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, formatFileSize } from "@/lib/uploadLimits";
 
 export async function POST(req: Request) {
   try {
+    // A restore truncates and replaces EVERY table, so it is Head Office
+    // only. This route previously had no login check at all.
+    const denied = await rejectIfNotHeadOffice();
+    if (denied) return denied;
+
+    const declaredSize = Number(req.headers.get("content-length") || 0);
+    if (declaredSize > MAX_UPLOAD_BYTES) {
+      return NextResponse.json(
+        { success: false, error: `Backup file is too large (${formatFileSize(declaredSize)}). The maximum allowed size is ${MAX_UPLOAD_MB} MB.` },
+        { status: 413 }
+      );
+    }
+
     const body = await req.json();
     const tables = (body.tables || {}) as Record<string, Record<string, unknown>[]>;
 

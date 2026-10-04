@@ -4,11 +4,26 @@ import { writeFile, mkdir, unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, formatFileSize } from '@/lib/uploadLimits'
 
 export type EntityType = 'tailor_order' | 'damage_product' | 'return' | 'warehouse_stock'
 
-export async function UploadEntityPhotos(entity_type: EntityType, entity_id: number, files: File[], uploaded_by: string) {
+export type UploadPhotosResult = { success: true; count: number } | { success: false; error: string }
+
+export async function UploadEntityPhotos(entity_type: EntityType, entity_id: number, files: File[], uploaded_by: string): Promise<UploadPhotosResult> {
   if (files.length === 0) return { success: true, count: 0 }
+
+  // All of a record's photos arrive in one request, so the limit applies to
+  // their combined size. This RETURNS an error rather than throwing,
+  // because Next.js hides the message of anything thrown from a Server
+  // Action in production — the user would only ever see a generic failure.
+  const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
+  if (totalBytes > MAX_UPLOAD_BYTES) {
+    return {
+      success: false,
+      error: `These photos total ${formatFileSize(totalBytes)}, which is over the ${MAX_UPLOAD_MB} MB limit for one upload. Please remove some and try again.`,
+    }
+  }
 
   const uploadsDir = join(process.cwd(), 'uploads')
   if (!existsSync(uploadsDir)) {

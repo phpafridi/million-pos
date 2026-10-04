@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { fetchCurrency } from "../settings/actions/fetchCurrency";
 import { toast } from "sonner";
 import SearchableSelect from "../shared/SearchableSelect";
+import { uploadSizeError } from "@/lib/uploadLimits";
 
 type TierPriceKey = 'quantity_above' | 'selling_price_tier';
 type ProductAttribute = 'attribute_name' | 'value';
@@ -138,7 +139,15 @@ export default function AddProduct() {
     };
 
     const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) setImage(e.target.files[0]);
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const sizeError = uploadSizeError(file.size, 'Image');
+        if (sizeError) {
+            toast.error(sizeError);
+            e.target.value = ''; // don't keep a file we've just refused
+            return;
+        }
+        setImage(file);
     };
 
     // Product Attributes

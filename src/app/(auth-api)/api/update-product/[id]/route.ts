@@ -5,6 +5,8 @@ import { writeFile } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { getShopScope, scopeShopIdForWrite } from "@/lib/getShopScope";
 import { logActivity } from "@/lib/auditLog";
+import { rejectIfNotLoggedIn } from "@/lib/apiGuards";
+import { uploadSizeError } from "@/lib/uploadLimits";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +112,11 @@ export async function POST(
       );
     }
 
+    // Before the body is read (see add-product). Previously only products
+    // owned by a specific shop were protected; shared ones accepted anyone.
+    const denied = await rejectIfNotLoggedIn();
+    if (denied) return denied;
+
     const formData = await request.formData();
     const scope = await getShopScope();
     const shopId = scopeShopIdForWrite(scope);
@@ -181,6 +188,10 @@ export async function POST(
 
     // ✅ Handle image upload
     const file = formData.get("file") as File | null;
+    const sizeError = file ? uploadSizeError(file.size, "Image") : null;
+    if (sizeError) {
+      return NextResponse.json({ success: false, error: sizeError }, { status: 413 });
+    }
     let imagePath = existingProduct.barcode_path;
 
     if (file && file.size > 0) {

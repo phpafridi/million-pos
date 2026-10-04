@@ -65,7 +65,8 @@ export default function AddWarehouseStock() {
       })
       if (photoFiles.length > 0) {
         try {
-          await UploadEntityPhotos('warehouse_stock', selected.product_id, photoFiles, adjustedBy)
+          const upload = await UploadEntityPhotos('warehouse_stock', selected.product_id, photoFiles, adjustedBy)
+          if (!upload.success) toast.error(`Stock updated, but the photos were not uploaded: ${upload.error}`)
         } catch (photoErr) {
           console.error('Failed to upload photos:', photoErr)
           toast.error('Stock updated, but photos failed to upload')

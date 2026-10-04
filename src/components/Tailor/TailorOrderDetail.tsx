@@ -255,7 +255,8 @@ export default function TailorOrderDetail({ tailorOrderId }: { tailorOrderId: nu
                           onClick={async () => {
                             setUploadingPhotos(true)
                             try {
-                              await UploadEntityPhotos('tailor_order', tailorOrderId, newPhotoFiles, session?.user?.name || session?.user?.email || 'Staff')
+                              const upload = await UploadEntityPhotos('tailor_order', tailorOrderId, newPhotoFiles, session?.user?.name || session?.user?.email || 'Staff')
+                              if (!upload.success) { toast.error(upload.error); return }
                               toast.success('Photos uploaded')
                               setNewPhotoFiles([])
                               FetchEntityPhotos('tailor_order', tailorOrderId).then(setPhotos)

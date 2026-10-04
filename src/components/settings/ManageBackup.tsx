@@ -1,6 +1,7 @@
 'use client'
 import React, { useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { uploadSizeError } from '@/lib/uploadLimits'
 
 export default function ManageBackup() {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -33,6 +34,9 @@ export default function ManageBackup() {
   const handleRestore = async () => {
     const file = fileRef.current?.files?.[0]
     if (!file) { toast.error('Choose a backup file first'); return }
+
+    const sizeError = uploadSizeError(file.size, 'Backup file')
+    if (sizeError) { toast.error(sizeError); return }
 
     if (!confirm('This will REPLACE all current data with the contents of this backup file. This cannot be undone. Continue?')) return
 

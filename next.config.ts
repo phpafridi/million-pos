@@ -25,13 +25,21 @@ const nextConfig = {
   reactStrictMode: true,
   turbopack: {},
   experimental: {
+    // Uploads are capped at 300 MB (see MAX_UPLOAD_MB in src/lib/uploadLimits.ts),
+    // which the app itself enforces with a friendly message. The two limits
+    // below are set slightly ABOVE that on purpose: the request body is the
+    // file PLUS the other form fields and multipart framing, so a file that
+    // is legitimately under 300 MB must never be turned away by Next.js first
+    // with its own unfriendly error.
     serverActions: {
-      // Default is 1MB, which rejects most real phone camera photos
-      // outright — this is what was causing tailor order photo uploads
-      // to fail. 10MB comfortably covers real-world photo sizes without
-      // leaving the limit effectively unbounded.
-      bodySizeLimit: '10mb',
+      bodySizeLimit: '320mb',
     },
+    // Easy to miss: the middleware (src/middleware.ts) runs on /dashboard/*,
+    // which is where Server Actions post. For those requests Next.js buffers
+    // the body in memory with its OWN cap — 10 MB by default — and when the
+    // body is bigger it silently TRUNCATES it instead of rejecting it, which
+    // would corrupt large uploads. This must be raised along with the above.
+    proxyClientMaxBodySize: '320mb',
   },
 };
 

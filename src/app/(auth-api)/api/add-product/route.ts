@@ -6,6 +6,8 @@ import { mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { getShopScope, scopeShopIdForWrite } from "@/lib/getShopScope";
 import { isSynced } from "@/lib/syncSettings";
+import { rejectIfNotLoggedIn } from "@/lib/apiGuards";
+import { uploadSizeError } from "@/lib/uploadLimits";
 
 export const dynamic = "force-dynamic";
 
@@ -100,6 +102,12 @@ function getProductAttributes(form: FormData): { attribute_name: string; value: 
 
 export async function POST(request: Request) {
   try {
+    // Checked before the body is read, so an anonymous caller can't make the
+    // server buffer a huge upload only to be turned away afterwards. (This
+    // route previously accepted anonymous requests.)
+    const denied = await rejectIfNotLoggedIn();
+    if (denied) return denied;
+
     const scope = await getShopScope();
     const shopId = scopeShopIdForWrite(scope);
     const productsSynced = await isSynced('products');
@@ -144,6 +152,10 @@ export async function POST(request: Request) {
     
     // File upload
     const file = data.get("file") as File | null;
+    const sizeError = file ? uploadSizeError(file.size, "Image") : null;
+    if (sizeError) {
+      return NextResponse.json({ success: false, error: sizeError }, { status: 413 });
+    }
     let imageName = "default-product.png";
     let imagePath = "/images/default-product.png";
 

@@ -4,6 +4,7 @@ import { AddBusinessProfile } from "./actions/AddBusinessProfile";
 import { GetBusinessProfile } from "./actions/GetBusinessProfile";
 
 import { toast } from "sonner"; // ✅ import toast
+import { uploadSizeError } from "@/lib/uploadLimits";
 
 export default function BusinessProfile() {
   const [form, setForm] = useState({
@@ -48,19 +49,29 @@ export default function BusinessProfile() {
   };
 
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setImage(file);
-      setPreview(URL.createObjectURL(file));
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const sizeError = uploadSizeError(file.size, 'Logo image');
+    if (sizeError) {
+      toast.error(sizeError);
+      e.target.value = ''; // don't keep a file we've just refused
+      return;
     }
+    setImage(file);
+    setPreview(URL.createObjectURL(file));
   };
 
   const handleFavicon = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setFavicon(file);
-      setFaviconPreview(URL.createObjectURL(file));
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const sizeError = uploadSizeError(file.size, 'Favicon image');
+    if (sizeError) {
+      toast.error(sizeError);
+      e.target.value = ''; // don't keep a file we've just refused
+      return;
     }
+    setFavicon(file);
+    setFaviconPreview(URL.createObjectURL(file));
   };
 
   // Submit form

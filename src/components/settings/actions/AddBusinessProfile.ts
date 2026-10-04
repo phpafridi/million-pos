@@ -4,6 +4,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { prisma } from "@/lib/prisma";
 import { getShopScope, scopeShopIdForWrite } from "@/lib/getShopScope";
+import { uploadSizeError } from "@/lib/uploadLimits";
 
 type ResultType =
   | { success: true }
@@ -22,6 +23,11 @@ export async function AddBusinessProfile(formData: FormData): Promise<ResultType
     if (!company_name || !company_email || !address || !phone) {
       return { success: false, error: "Missing required fields." };
     }
+
+    const sizeProblem =
+      (logo_image ? uploadSizeError(logo_image.size, "Logo image") : null) ||
+      (favicon_image ? uploadSizeError(favicon_image.size, "Favicon image") : null);
+    if (sizeProblem) return { success: false, error: sizeProblem };
 
     let logoFileName: string | null = null;
     let faviconFileName: string | null = null;

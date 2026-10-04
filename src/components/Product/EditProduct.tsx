@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { fetchCurrency } from "../settings/actions/fetchCurrency";
 import { ProductById as ServerProductById } from './actions/ProductById'
+import { uploadSizeError } from '@/lib/uploadLimits'
 import SearchableSelect from "../shared/SearchableSelect";
 
 type TierPriceKey = 'quantity_above' | 'selling_price_tier';
@@ -197,10 +198,16 @@ export default function EditProduct({ productId }: Props) {
   };
 
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setImageFile(e.target.files[0]);
-      setExistingImagePath(URL.createObjectURL(e.target.files[0]));
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const sizeError = uploadSizeError(file.size, 'Image');
+    if (sizeError) {
+      toast.error(sizeError);
+      e.target.value = ''; // don't keep a file we've just refused
+      return;
     }
+    setImageFile(file);
+    setExistingImagePath(URL.createObjectURL(file));
   };
 
   // Product Attributes

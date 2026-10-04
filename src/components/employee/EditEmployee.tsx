@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { UserByEmail } from "./actions/UserByEmail";
 import { navigationMenus } from "./constants/navigationMenus";
+import { toast } from "sonner";
+import { uploadSizeError } from "@/lib/uploadLimits";
 
 type NavItem = {
   title: string;
@@ -84,11 +86,16 @@ export default function EditForm({ email }: { email: string }) {
   };
 
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setImage(file);
-      setPreview(URL.createObjectURL(file));
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const sizeError = uploadSizeError(file.size, 'Photo');
+    if (sizeError) {
+      toast.error(sizeError);
+      e.target.value = ''; // don't keep a file we've just refused
+      return;
     }
+    setImage(file);
+    setPreview(URL.createObjectURL(file));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

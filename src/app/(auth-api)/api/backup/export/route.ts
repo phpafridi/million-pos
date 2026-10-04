@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rejectIfNotHeadOffice } from "@/lib/apiGuards";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    // A full backup contains every franchise's data, so this is Head Office
+    // only. This route previously had no login check at all.
+    const denied = await rejectIfNotHeadOffice();
+    if (denied) return denied;
+
     const tables: { table_name: string }[] = await prisma.$queryRawUnsafe(
       `SELECT TABLE_NAME as table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'`
     );

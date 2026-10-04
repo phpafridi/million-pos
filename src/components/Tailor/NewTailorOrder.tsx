@@ -253,7 +253,8 @@ export default function NewTailorOrder() {
 
       if (photoFiles.length > 0) {
         try {
-          await UploadEntityPhotos('tailor_order', order.tailor_order_id, photoFiles, takenBy)
+          const upload = await UploadEntityPhotos('tailor_order', order.tailor_order_id, photoFiles, takenBy)
+          if (!upload.success) toast.error(`Order saved, but the photos were not uploaded: ${upload.error}`)
         } catch (photoErr) {
           console.error('Failed to upload photos:', photoErr)
           toast.error('Order saved, but photos failed to upload')

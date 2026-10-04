@@ -15,6 +15,7 @@ import { getDashboardComparisons, DashboardComparisons } from './actions/getDash
 import FetchShopRollup, { ShopRollupRow } from '../reports/actions/FetchShopRollup'
 import { getKPIsByShop, ShopKPI } from './actions/getKPIsByShop'
 import { fetchCurrency } from '../settings/actions/fetchCurrency'
+import OnlineOrdersSection from './OnlineOrdersSection'
 
 const PIE_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#ef4444', '#84cc16']
 
@@ -168,6 +169,9 @@ export default function HeadOfficeDashboard() {
           </div>
         ))}
       </div>
+
+      {/* eCommerce website — pulled live from the online store's own API; loads independently so a slow or unreachable store never affects the rest of this page */}
+      <OnlineOrdersSection currency={currency} />
 
       {/* Per-franchise breakdown — the KPI cards above are network totals; this is where each franchise's own numbers live */}
       <div style={{ ...card, marginBottom: 16 }}>

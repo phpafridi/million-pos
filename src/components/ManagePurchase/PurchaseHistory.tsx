@@ -24,6 +24,8 @@ type Purchase = {
 export default function PurchaseHistory() {
   const { data: session } = useSession()
   const canView = hasPermission(session, 'action:view-purchase-invoice', 'view')
+  // 'edit' kind: Head Office never edits purchases — that's franchise-level work.
+  const canEdit = hasPermission(session, 'action:edit-purchase', 'edit')
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -141,6 +143,15 @@ export default function PurchaseHistory() {
                             </Link>
                           ) : (
                             <span className="glyphicon glyphicon-lock" title="No permission to view purchase invoices"></span>
+                          )}
+                          {canEdit && (
+                            <Link
+                              href={`/dashboard/manage-purchase/purchase/edit/${p.purchase_id}`}
+                              title="Edit this purchase (add forgotten items, correct quantities)"
+                              style={{ marginLeft: 12 }}
+                            >
+                              <span className="glyphicon glyphicon-pencil"></span>
+                            </Link>
                           )}
                         </td>
                       </tr>

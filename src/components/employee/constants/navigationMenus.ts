@@ -71,6 +71,7 @@ export const navigationMenus: NavItem[] = [
           { title: 'New Purchase', path: '/dashboard/manage-purchase/purchase/new-purchase' },
           { title: 'Purchase History', path: '/dashboard/manage-purchase/purchase/purchase-history' },
           { title: 'View Purchase Invoice', path: 'action:view-purchase-invoice' },
+          { title: 'Edit Purchase', path: 'action:edit-purchase' },
           { title: 'Batch Stock', path: '/dashboard/manage-purchase/purchase/batch-stock' },
         ],
       },

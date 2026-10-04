@@ -468,11 +468,11 @@ export default function AddProduct() {
                             <div className="ap-grid-3">
                                 <div className="ap-field">
                                     <label>Opening Stock</label>
-                                    <input type="number" step="0.01" name="product_quantity" value={form.product_quantity} onChange={handleChange} className="ap-input" placeholder="0" />
+                                    <input type="number" step="any" name="product_quantity" value={form.product_quantity} onChange={handleChange} className="ap-input" placeholder="0" />
                                 </div>
                                 <div className="ap-field">
                                     <label>Low Stock Alert Below</label>
-                                    <input type="number" step="0.01" name="notify_bellow_quantity" value={form.notify_bellow_quantity} onChange={handleChange} className="ap-input" placeholder="e.g. 5" />
+                                    <input type="number" step="any" name="notify_bellow_quantity" value={form.notify_bellow_quantity} onChange={handleChange} className="ap-input" placeholder="e.g. 5" />
                                 </div>
                                 <div className="ap-field">
                                     <label>

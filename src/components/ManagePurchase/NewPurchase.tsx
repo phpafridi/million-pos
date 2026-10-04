@@ -619,7 +619,7 @@ export default function NewPurchase() {
                           type="number"
                           className="pur-num"
                           value={displayQty}
-                          min={0.1} step={1}
+                          min={0.1} step="any"
                           ref={el => { qtyRefs.current[item.product.product_id] = el }}
                           onFocus={() => setSelectedCartRow(idx)}
                           onClick={e => e.stopPropagation()}

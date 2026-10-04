@@ -436,7 +436,7 @@ export default function EditProduct({ productId }: Props) {
                         <tbody>
                           {tierPrices.map((tier, i) => (
                             <tr key={i}>
-                              <td><input type="number" step="0.01" name="quantity_above" value={tier.quantity_above} onChange={e => handleTierChange(i, e)} className="form-control" /></td>
+                              <td><input type="number" step="any" name="quantity_above" value={tier.quantity_above} onChange={e => handleTierChange(i, e)} className="form-control" /></td>
                               <td><input type="number" step="0.01" name="selling_price_tier" value={tier.selling_price_tier} onChange={e => handleTierChange(i, e)} className="form-control" /></td>
                               <td>
                                 {i === 0 ? null : <button className="btn btn-danger" onClick={e => { e.preventDefault(); handleRemoveTire(i); }}>Remove</button>}
@@ -453,12 +453,12 @@ export default function EditProduct({ productId }: Props) {
                       <div className="form-group">
                         <label>Product Quantity</label>
                         {/* CHANGED: Added step="0.01" for decimal support */}
-                        <input type="number" step="0.01" name="product_quantity" value={form.product_quantity} onChange={handleChange} className="form-control" />
+                        <input type="number" step="any" name="product_quantity" value={form.product_quantity} onChange={handleChange} className="form-control" />
                       </div>
                       <div className="form-group">
                         <label>Notify Below Quantity</label>
                         {/* CHANGED: Added step="0.01" for decimal support */}
-                        <input type="number" step="0.01" name="notify_bellow_quantity" value={form.notify_bellow_quantity} onChange={handleChange} className="form-control" />
+                        <input type="number" step="any" name="notify_bellow_quantity" value={form.notify_bellow_quantity} onChange={handleChange} className="form-control" />
                       </div>
                       
                       {/* ADDED: Expiration Date Section */}
@@ -528,7 +528,7 @@ export default function EditProduct({ productId }: Props) {
                           {/* CHANGED: Added step="0.01" for decimal support */}
                           <input
                             type="number"
-                            step="0.01"
+                            step="any"
                             name="packet_size"
                             value={form.packet_size}
                             onChange={handleChange}

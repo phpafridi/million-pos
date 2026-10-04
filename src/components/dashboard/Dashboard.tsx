@@ -210,8 +210,7 @@ export default function Dashboard() {
 
       <section className="content-header">
         <ol className="breadcrumb">
-          <li>Email : invexapk@gmail.com</li>
-          <li>@adkhyber - facebook</li>
+
           
         </ol>
       </section>

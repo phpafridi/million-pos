@@ -851,7 +851,6 @@ export default function NewSale() {
                       const inPcsMode = !isPacketProduct || item.sellInPcs
                       const displayQty  = inPcsMode ? item.qty : item.qty / ps
                       const displayUnit = inPcsMode ? normUnit(item.product.measurement_unit) : 'pkt'
-                      const step        = 1
                       const minVal      = inPcsMode ? 0.1 : 1
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
@@ -860,7 +859,7 @@ export default function NewSale() {
                             className="pos-num-input"
                             value={Number(displayQty.toFixed(inPcsMode ? 1 : 0))}
                             min={minVal}
-                            step={step}
+                            step="any"
                             ref={el => { qtyRefs.current[item.product.product_id] = el }}
                             onClick={e => e.stopPropagation()}
                             onFocus={() => setSelectedCartRow(idx)}

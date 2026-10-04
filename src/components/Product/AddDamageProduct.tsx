@@ -375,7 +375,7 @@ export default function AddDamageProduct() {
                       className="dmg-input"
                       placeholder="0"
                       min={0.1}
-                      step={0.1}
+                      step="any"
                       value={qty}
                       onChange={e => setQty(parseFloat(e.target.value) || '')}
                     />

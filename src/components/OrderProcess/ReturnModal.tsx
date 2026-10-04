@@ -251,7 +251,7 @@ export default function ReturnModal({
                           style={{ width: 90 }}
                           min={0}
                           max={d.product_quantity}
-                          step={0.1}
+                          step="any"
                           value={rQty || ''}
                           placeholder="0"
                           onChange={(e) => {
@@ -348,7 +348,7 @@ export default function ReturnModal({
                               className="form-control"
                               style={{ width: 80 }}
                               min={0.1}
-                              step={0.1}
+                              step="any"
                               value={item.qty}
                               onChange={(e) =>
                                 updateExchangeQty(

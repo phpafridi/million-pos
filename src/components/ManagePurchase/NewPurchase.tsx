@@ -1,14 +1,20 @@
 'use client'
-import React, { useEffect, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import FetchProducts from '../Product/actions/FetchProduct'
 import { FetchSuppliers } from '../ManagePurchase/actions/FetchSupplier'
-import { SaveBatchPurchase, BatchItem } from '../ManagePurchase/actions/SaveBatchPurchase'
+import { BatchItem } from '../ManagePurchase/actions/SaveBatchPurchase'
+import { SubmitPurchaseOnce } from '@/lib/offlineSubmit'
+import { enqueue, newClientKey } from '@/lib/offlineQueue'
 import { FetchProductBatches, ProductBatch } from '../OrderProcess/actions/FetchProductBatches'
 import { toast } from 'sonner'
 import { useNotifications } from '../store/useNotifications'
 import SearchableSelect from '../shared/SearchableSelect'
+import DraftBanner from '../shared/DraftBanner'
+import { useDraft } from '@/lib/useDraft'
+import { localDateString, dateWithCurrentTime } from '@/lib/dateTime'
+import { useOnlineStatus } from '@/lib/useOnlineStatus'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,7 +81,7 @@ export default function NewPurchase() {
   const [highlightedIdx, setHighlightedIdx] = useState(-1)
   const [selectedCartRow, setSelectedCartRow] = useState(-1)
   const [addAsPiece, setAddAsPiece]       = useState(false)
-  const [purchaseDate, setPurchaseDate]   = useState(new Date().toISOString().slice(0, 10))
+  const [purchaseDate, setPurchaseDate]   = useState(localDateString())
   const [purchaseRef, setPurchaseRef]     = useState('')
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [loading, setLoading]             = useState(false)
@@ -91,7 +97,7 @@ export default function NewPurchase() {
   const submitRef   = useRef<HTMLButtonElement>(null)
   const qtyRefs     = useRef<Record<number, HTMLInputElement | null>>({})
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateString()
   const toDec = (v: any) => parseFloat(Number(v).toFixed(1))
 
   // ── Load data ─────────────────────────────────────────────────────────────
@@ -151,7 +157,8 @@ export default function NewPurchase() {
         return prev.map(c => c.product.product_id === product.product_id
           ? { ...c, qty: qtyToAdd, unitType } : c)
       }
-      return [...prev, {
+      // Newest item goes to the TOP of the cart.
+      return [{
         product, qty: qtyToAdd,
         buying_price: product.buying_price,
         selling_price: product.selling_price,
@@ -159,14 +166,17 @@ export default function NewPurchase() {
         batch_number: batchNum || `BN-${product.product_code}-${new Date().toISOString().slice(0,10)}`,
         is_existing_batch: false,
         damaged_qty: 0,
-      }]
+      }, ...prev]
     })
-    setSelectedCartRow(cart.length)
+    {
+      const existingIdx = cart.findIndex(c => c.product.product_id === product.product_id)
+      setSelectedCartRow(existingIdx >= 0 ? existingIdx : 0)
+    }
     setSearchTerm('')
     setSearchResults([])
     searchRef.current?.focus()
     toast.success(`${product.product_name} added`)
-  }, [addAsPiece, cart.length])
+  }, [addAsPiece, cart])
 
   const addToCart = useCallback(async (product: Product) => {
     // If already in cart — just increment
@@ -176,7 +186,11 @@ export default function NewPurchase() {
       return
     }
     // Fetch existing batches to offer the choice
-    const batches = await FetchProductBatches(product.product_id)
+    // Offline: can't look up existing batches — add as a new batch.
+    let batches: Awaited<ReturnType<typeof FetchProductBatches>> = []
+    try {
+      batches = await FetchProductBatches(product.product_id)
+    } catch { /* offline → treat as no existing batches */ }
     const active = batches.filter(b => b.qty_remaining >= 0) // include even 0-qty for top-up
     if (active.length > 0) {
       // Has existing batches — show picker with option to add new or top-up existing
@@ -258,14 +272,14 @@ export default function NewPurchase() {
               const exists = prev.find(c => c.product.product_id === batchPickerProduct.product_id)
               if (exists) return prev.map(c => c.product.product_id === batchPickerProduct.product_id
                 ? { ...c, qty: toDec(c.qty + qtyToAdd) } : c)
-              return [...prev, {
+              return [{
                 product: batchPickerProduct, qty: qtyToAdd,
                 buying_price: batch.buying_price, selling_price: batch.selling_price,
                 expiry_date: batch.expiry_date || '', manufacture_date: batch.manufacture_date || '',
                 unitType, batch_number: batch.batch_number, is_existing_batch: true, damaged_qty: 0,
-              }]
+              }, ...prev]
             })
-            setSelectedCartRow(cart.length)
+            setSelectedCartRow(0)
             setSearchTerm(''); setSearchResults([])
             searchRef.current?.focus()
             toast.success(`Added to batch ${batch.batch_number}`)
@@ -328,6 +342,33 @@ export default function NewPurchase() {
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
+  const online = useOnlineStatus()
+
+  // ── draft (survives restart / crash; user chooses Resume or Discard) ─────
+  const draftUserId = (session?.user as any)?.id ?? session?.user?.email ?? null
+  const draftShopId = activeShopId ?? (session?.user as any)?.shop_id ?? 0
+  const draftKey = draftUserId ? `invexa:draft:purchase:${draftUserId}:${draftShopId}` : null
+  const draftValue = useMemo(() => ({
+    cart, selectedSupplier, purchaseRef, paymentMethod, purchaseDate,
+  }), [cart, selectedSupplier, purchaseRef, paymentMethod, purchaseDate])
+  const draft = useDraft(draftKey, draftValue, cart.length === 0)
+
+  const resumeDraft = () => {
+    const d: any = draft.resume()
+    if (!d || !Array.isArray(d.cart)) return
+    setCart(d.cart.map((it: CartItem) => ({
+      ...it,
+      product: products.find(p => p.product_id === it.product.product_id) ?? it.product,
+    })))
+    if (d.selectedSupplier && suppliers.some(s => String(s.supplier_id) === String(d.selectedSupplier))) {
+      setSelectedSupplier(String(d.selectedSupplier))
+    }
+    setPurchaseRef(d.purchaseRef ?? '')
+    if (d.paymentMethod) setPaymentMethod(d.paymentMethod)
+    if (d.purchaseDate) setPurchaseDate(d.purchaseDate)
+    setSelectedCartRow(0)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedSupplier) { toast.error('Please select a supplier'); return }
@@ -336,12 +377,13 @@ export default function NewPurchase() {
       if (item.selling_price <= 0) { toast.error(`Set selling price for ${item.product.product_name}`); return }
     }
     setLoading(true)
-    const res = await SaveBatchPurchase({
+    const key = newClientKey()
+    const payload = {
       supplier_id:    Number(selectedSupplier),
       purchase_ref:   purchaseRef,
       payment_method: paymentMethod,
       shop_id_override: activeShopId,
-      purchase_date:  purchaseDate,
+      purchase_date:  dateWithCurrentTime(purchaseDate),
       cart: cart.map(item => ({
         product_id:        item.product.product_id,
         qty:               toDec(item.qty),
@@ -353,14 +395,50 @@ export default function NewPurchase() {
         is_existing_batch: item.is_existing_batch,
         damaged_qty:       item.damaged_qty || 0,
       } as BatchItem)),
-    })
+    }
+
+    const resetForm = () => {
+      draft.clear()
+      setCart([]); setPurchaseRef(''); setSelectedSupplier('')
+      setPurchaseDate(localDateString())
+      setSelectedCartRow(-1)
+      searchRef.current?.focus()
+    }
+
+    // Keep it on this computer and upload automatically later. Used when
+    // offline, or when the connection drops mid-request (the SAME key is
+    // reused, so a purchase the server did receive is never created twice).
+    const saveOffline = async () => {
+      const uid = (session?.user as any)?.id
+      if (!uid) { toast.error('Not signed in — cart kept.'); return }
+      try {
+        const supplierName = suppliers.find(s => String(s.supplier_id) === String(selectedSupplier))?.supplier_name
+        await enqueue({
+          key, kind: 'purchase', userId: String(uid), payload,
+          label: `${cart.length} item(s) · ${supplierName ?? 'supplier'} · ${grandTotal.toFixed(2)}`,
+        })
+      } catch {
+        toast.error('Could not save this purchase on the computer (browser storage unavailable). Your cart is kept.')
+        return
+      }
+      toast.success('Saved on this computer — it will upload automatically when the internet returns.')
+      resetForm()
+    }
+
+    if (!online) { await saveOffline(); setLoading(false); return }
+
+    let res: any
+    try {
+      res = await SubmitPurchaseOnce(payload, key)
+    } catch {
+      await saveOffline()
+      setLoading(false)
+      return
+    }
     setLoading(false)
     if (res.success) {
       toast.success(res.message)
-      setCart([]); setPurchaseRef(''); setSelectedSupplier('')
-      setPurchaseDate(new Date().toISOString().slice(0, 10))
-      setSelectedCartRow(-1)
-      searchRef.current?.focus()
+      resetForm()
       // Refresh notifications — new stock may fix low-stock alerts
       // and new batches may have expiry dates to track
       await refreshLowStock()
@@ -542,6 +620,10 @@ export default function NewPurchase() {
               {showHints ? '✕ hints' : '? hints'}
             </button>
           </div>
+
+          {draft.pending && (
+            <DraftBanner savedAt={draft.pending.savedAt} label="purchase" onResume={resumeDraft} onDiscard={draft.discard} />
+          )}
 
           {/* Cart column headers */}
           <div className="pur-cart-head">
@@ -869,6 +951,8 @@ export default function NewPurchase() {
               >
                 {loading
                   ? <><i className="fa fa-spinner fa-spin" /> Saving…</>
+                  : !online
+                  ? <><i className="fa fa-save" /> Save Offline (uploads later)</>
                   : <><i className="fa fa-check" /> Save Batch Purchase <span className="pur-kbd" style={{ fontSize: 10, marginLeft: 6 }}>F12</span></>
                 }
               </button>
@@ -946,7 +1030,7 @@ export default function NewPurchase() {
                             const exists = prev.find(c => c.product.product_id === batchPickerProduct.product_id)
                             if (exists) return prev.map(c => c.product.product_id === batchPickerProduct.product_id
                               ? { ...c, qty: toDec(c.qty + qtyToAdd) } : c)
-                            return [...prev, {
+                            return [{
                               product: batchPickerProduct, qty: qtyToAdd,
                               buying_price: batch.buying_price,
                               selling_price: batch.selling_price,
@@ -955,9 +1039,9 @@ export default function NewPurchase() {
                               unitType, batch_number: batch.batch_number,
                               is_existing_batch: true,
                               damaged_qty: 0,
-                            }]
+                            }, ...prev]
                           })
-                          setSelectedCartRow(cart.length)
+                          setSelectedCartRow(0)
                           setSearchTerm(''); setSearchResults([])
                           searchRef.current?.focus()
                           toast.success(`Added to batch ${batch.batch_number}`)

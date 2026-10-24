@@ -1,17 +1,22 @@
 'use client'
 
-import React, { useEffect, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import FetchProducts from '../Product/actions/FetchProduct'
 import { FetchCustomerData } from '../Customer/actions/FetchCustomerData'
 import { FindCustomerByCardNumber } from '../Customer/actions/LoyaltyActions'
-import { AddOrder } from '../OrderProcess/actions/AddOrder'
+import { SubmitSaleOnce } from '@/lib/offlineSubmit'
+import { enqueue, newClientKey } from '@/lib/offlineQueue'
 import { useSession } from 'next-auth/react'
 import { useNotifications } from '../store/useNotifications'
 import { toast } from 'sonner'
 import PrintReceipt from '../Print/PrintReceipt'
 import { fetchCurrency } from '../settings/actions/fetchCurrency'
 import SearchableSelect from '../shared/SearchableSelect'
+import DraftBanner from '../shared/DraftBanner'
+import { useDraft } from '@/lib/useDraft'
+import { localDateString, dateWithCurrentTime } from '@/lib/dateTime'
+import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import { FetchProductBatches, ProductBatch } from './actions/FetchProductBatches'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -164,7 +169,7 @@ export default function NewSale() {
   const [processWithoutPayment, setProcessWithoutPayment] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [saleRef, setSaleRef]           = useState('')
-  const [saleDate, setSaleDate]         = useState(new Date().toISOString().slice(0, 10))
+  const [saleDate, setSaleDate]         = useState(localDateString())
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState<string | null>(null)
   const [currency, setCurrency]         = useState('Rs')
@@ -330,18 +335,22 @@ export default function NewSale() {
         return prev
       }
       const initialQty = Math.min(step, maxQty)
-      return [...prev, {
+      // Newest item goes to the TOP of the cart so it is always visible.
+      return [{
         product, qty: initialQty, price: priceToUse,
         priceType, taxAmount: calcTax(product, priceToUse, initialQty),
         batch: batch || undefined,
         sellInPcs: true,  // always start in pcs mode — user can toggle to packet
-      }]
+      }, ...prev]
     })
-    setSelectedCartRow(cart.length)
+    {
+      const existingIdx = cart.findIndex(c => c.product.product_id === product.product_id)
+      setSelectedCartRow(existingIdx >= 0 ? existingIdx : 0)
+    }
     setSearchTerm('')
     setSearchResults([])
     searchRef.current?.focus()
-  }, [cart.length, getPrice])
+  }, [cart, getPrice])
 
   const addToCart = useCallback(async (product: Product) => {
     if (product.status === 0) { toast.error('Product is inactive'); return }
@@ -356,7 +365,12 @@ export default function NewSale() {
     if (product.inventory < 0.1) { toast.error('Out of stock'); return }
 
     // Fetch active, non-expired batches
-    const batches = await FetchProductBatches(product.product_id, activeShopId)
+    // Offline (or server unreachable): can't look up batches — add the item
+    // without one; the server picks the batch when the sale is uploaded.
+    let batches: Awaited<ReturnType<typeof FetchProductBatches>> = []
+    try {
+      batches = await FetchProductBatches(product.product_id, activeShopId)
+    } catch { /* offline → no batch info */ }
     const activeBatches = batches.filter(b => !b.is_expired && b.qty_remaining > 0)
 
     if (activeBatches.length > 1 && batchMode) {
@@ -448,7 +462,38 @@ export default function NewSale() {
   const change         = processWithoutPayment ? 0 : paid - grandTotal
   // Submit is disabled when: loading, cart empty, OR (not pending + not processWithoutPayment + paid < grandTotal)
   const paidInsufficient = !processWithoutPayment && paymentMethod !== 'pending' && (paidAmount === '' || paid < grandTotal)
+  const online = useOnlineStatus()
   const submitDisabled = loading || cart.length === 0 || paidInsufficient
+
+  // ── draft (survives restart / crash; user chooses Resume or Discard) ─────
+  const draftUserId = (session?.user as any)?.id ?? session?.user?.email ?? null
+  const draftShopId = activeShopId ?? (session?.user as any)?.shop_id ?? 0
+  const draftKey = draftUserId ? `invexa:draft:sale:${draftUserId}:${draftShopId}` : null
+  const draftValue = useMemo(() => ({
+    cart, customerId: selectedCustomer?.customer_id ?? 0,
+    paidAmount, customDiscount, isDiscountEnabled, processWithoutPayment, paymentMethod, saleRef,
+  }), [cart, selectedCustomer?.customer_id, paidAmount, customDiscount, isDiscountEnabled, processWithoutPayment, paymentMethod, saleRef])
+  const draft = useDraft(draftKey, draftValue, cart.length === 0)
+
+  const resumeDraft = () => {
+    const d: any = draft.resume()
+    if (!d || !Array.isArray(d.cart)) return
+    // Refresh each line's product from the live catalogue (current stock/price
+    // rules); keep the saved qty and price the cashier had set.
+    setCart(d.cart.map((it: CartItem) => ({
+      ...it,
+      product: products.find(p => p.product_id === it.product.product_id) ?? it.product,
+    })))
+    const cust = customers.find(cu => cu.customer_id === d.customerId)
+    if (cust) setSelectedCustomer(cust)
+    setPaidAmount(d.paidAmount ?? '')
+    setCustomDiscount(d.customDiscount ?? 0)
+    setIsDiscountEnabled(Boolean(d.isDiscountEnabled))
+    setProcessWithoutPayment(Boolean(d.processWithoutPayment))
+    if (d.paymentMethod) setPaymentMethod(d.paymentMethod)
+    setSaleRef(d.saleRef ?? '')
+    setSelectedCartRow(0)
+  }
 
   // ── keyboard handler ──────────────────────────────────────────────────────
 
@@ -517,6 +562,23 @@ export default function NewSale() {
 
   // ── submit ────────────────────────────────────────────────────────────────
 
+  const resetSaleForm = () => {
+    draft.clear()
+    clearCart()
+    setCustomDiscount(0)
+    setPointsToRedeem(0)
+    setCardVerified(false)
+    setPaidAmount('')
+    // Explicitly reset to walkin, not just the verification flag —
+    // otherwise a stale verified customer_id could silently carry
+    // over to the next sale even though the display shows "Walking
+    // Client" again.
+    const walkinReset = customers.find((c) => c.customer_name?.toLowerCase() === 'walkin')
+    setSelectedCustomer(walkinReset ?? { customer_id: 0, customer_name: 'Walking Client', discount: 0 })
+    setProcessWithoutPayment(false)
+    setSaleRef('')
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -527,8 +589,8 @@ export default function NewSale() {
     if (!processWithoutPayment && paid < grandTotal) { setError('Paid amount is less than grand total'); return }
 
     setLoading(true)
-    try {
-      const res = await AddOrder({
+    const key = newClientKey()
+    const payload = {
         sales_person: session?.user?.name || session?.user?.email || 'Staff',
         customer_id: selectedCustomer?.customer_id ?? 0,
         points_redeemed: pointsToRedeem,
@@ -536,7 +598,7 @@ export default function NewSale() {
         payment_method: paymentMethod as any,
         paid_amount: processWithoutPayment ? 0 : paid,
         discount: discountAmt,
-        sale_date: saleDate,
+        sale_date: dateWithCurrentTime(saleDate),
         shop_id_override: activeShopId,
         cart: cart.map(item => ({
           product_id: item.product.product_id,
@@ -544,7 +606,35 @@ export default function NewSale() {
           price: parseFloat(item.price.toFixed(2)),
           tax_amount: parseFloat(item.taxAmount.toFixed(2)),
         })),
-      })
+    }
+
+    // Keep the sale on this computer and upload it automatically later.
+    // Used when offline, and when the connection drops mid-request (the
+    // SAME key is reused, so even if the server did receive it, it is never
+    // created twice).
+    const saveOffline = async () => {
+      if (!draftUserId) { setError('Not signed in — cart kept.'); return }
+      try {
+        await enqueue({
+          key, kind: 'sale', userId: String(draftUserId), payload,
+          label: `${cart.length} item(s) · ${currency} ${grandTotal.toFixed(2)}`,
+        })
+      } catch {
+        setError('Could not save this sale on the computer (browser storage unavailable). Your cart is kept.')
+        return
+      }
+      // Keep the on-screen stock honest for the next sale on this screen.
+      const sold = new Map(cart.map(i => [i.product.product_id, i.qty]))
+      setProducts(prev => prev.map(p => sold.has(p.product_id) ? { ...p, inventory: Math.max(0, p.inventory - (sold.get(p.product_id) || 0)) } : p))
+      toast.success('Saved on this computer — it will upload automatically when the internet returns. No receipt until then.')
+      resetSaleForm()
+      searchRef.current?.focus()
+    }
+
+    if (!online) { await saveOffline(); setLoading(false); return }
+
+    try {
+      const res: any = await SubmitSaleOnce(payload, key)
       if (res.success) {
         toast.success(
           res.loyalty_points_awarded
@@ -576,28 +666,17 @@ export default function NewSale() {
             : undefined,
         })
         setPendingPrint(true)
-        clearCart()
-        setCustomDiscount(0)
-        setPointsToRedeem(0)
-        setCardVerified(false)
-        setPaidAmount('')
-        // Explicitly reset to walkin, not just the verification flag —
-        // otherwise a stale verified customer_id could silently carry
-        // over to the next sale even though the display shows "Walking
-        // Client" again.
-        const walkinReset = customers.find((c) => c.customer_name?.toLowerCase() === 'walkin')
-        setSelectedCustomer(walkinReset ?? { customer_id: 0, customer_name: 'Walking Client', discount: 0 })
-        setProcessWithoutPayment(false)
-        setSaleRef('')
+        resetSaleForm()
         await refreshLowStock()
         await refreshPendingOrders()
         searchRef.current?.focus()
       } else {
-        throw new Error(res.message)
+        setError(res.message || 'Failed to save order')
+        toast.error(res.message || 'Failed to save order')
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to save order')
-      toast.error('Failed to save order')
+    } catch {
+      // The request itself failed — connection dropped. Queue it (same key).
+      await saveOffline()
     } finally {
       setLoading(false)
     }
@@ -605,7 +684,7 @@ export default function NewSale() {
 
   // ── render ────────────────────────────────────────────────────────────────
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateString()
 
   return (
     <>
@@ -788,6 +867,10 @@ export default function NewSale() {
               🗂 Batch
             </label>
           </div>
+
+          {draft.pending && (
+            <DraftBanner savedAt={draft.pending.savedAt} label="sale" onResume={resumeDraft} onDiscard={draft.discard} />
+          )}
 
           {/* Cart header */}
           <div className="pos-cart-head">
@@ -1006,7 +1089,7 @@ export default function NewSale() {
                           toast.error('No customer found for that card')
                         }
                       } catch (err: any) {
-                        toast.error(err.message || 'This card could not be used')
+                        toast.error(!online ? 'No internet — card lookup needs a connection' : (err.message || 'This card could not be used'))
                       }
                       setCardScanInput('')
                     }}
@@ -1251,6 +1334,8 @@ export default function NewSale() {
               >
                 {loading ? (
                   <><i className="fa fa-spinner fa-spin" /> Processing…</>
+                ) : !online ? (
+                  <><i className="fa fa-save" /> Save Offline (uploads later)</>
                 ) : paymentMethod === 'pending' ? (
                   <><i className="fa fa-clock-o" /> Save Pending Order</>
                 ) : (

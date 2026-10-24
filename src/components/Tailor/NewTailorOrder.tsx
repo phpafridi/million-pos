@@ -1,13 +1,18 @@
 'use client'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { FetchTailorCustomers, AddOrUpdateTailorCustomer, AddTailorOrder, FetchTailorOrderById, FetchTailorOrdersByCustomer } from './actions/TailorActions'
+import { FetchTailorCustomers, FetchTailorOrderById, FetchTailorOrdersByCustomer } from './actions/TailorActions'
+import { SubmitTailorCustomerOnce, SubmitTailorOrderOnce } from '@/lib/offlineSubmit'
+import { enqueue, newClientKey } from '@/lib/offlineQueue'
 import TailorOrderSlip from './TailorOrderSlip'
 import FractionInput from './FractionInput'
 import IconOptionPicker from './IconOptionPicker'
 import { STYLE_ICONS, GenericTag } from './icons/StyleIcons'
 import PhotoPicker from '../shared/PhotoPicker'
+import DraftBanner from '../shared/DraftBanner'
+import { useDraft } from '@/lib/useDraft'
+import { useOnlineStatus } from '@/lib/useOnlineStatus'
 import { UploadEntityPhotos } from '@/lib/entityPhotos'
 import PrintReceipt from '../Print/PrintReceipt'
 import { formatAsFraction } from '@/lib/formatMeasurement'
@@ -68,7 +73,7 @@ export default function NewTailorOrder() {
   useEffect(() => {
     fetch('/api/tailor-style-options').then(r => r.json()).then(json => {
       if (json.success) setDynamicOptions(json.data)
-    })
+    }).catch(() => { /* offline — style options unavailable until the connection returns */ })
   }, [])
 
   const optionsFor = (group: string) => dynamicOptions.filter(o => o.option_group === group)
@@ -92,6 +97,32 @@ export default function NewTailorOrder() {
     }
   }, [pendingThermalPrint, lastOrderData])
 
+  const online = useOnlineStatus()
+
+  // ── draft (survives restart / crash; user chooses Resume or Discard) ─────
+  // Photos (File objects) can't be stored, so they are not part of the draft.
+  const draftUserId = (session?.user as any)?.id ?? session?.user?.email ?? null
+  const draftKey = draftUserId ? `invexa:draft:tailor:${draftUserId}:${(session?.user as any)?.shop_id ?? 0}` : null
+  const draftValue = useMemo(() => ({
+    phone, selectedCustomer, customerForm, measurements, orderForm, styleOptions,
+  }), [phone, selectedCustomer, customerForm, measurements, orderForm, styleOptions])
+  const draftIsEmpty =
+    !selectedCustomer && !customerForm.customer_name && !customerForm.phone && !phone &&
+    !orderForm.garment_type && !orderForm.tailoring_amount && !orderForm.fabric_details &&
+    Object.values(measurements).every(v => !v)
+  const draft = useDraft(draftKey, draftValue, draftIsEmpty)
+
+  const resumeDraft = () => {
+    const d: any = draft.resume()
+    if (!d) return
+    setPhone(d.phone ?? '')
+    setSelectedCustomer(d.selectedCustomer ?? null)
+    if (d.customerForm) setCustomerForm(d.customerForm)
+    if (d.measurements) setMeasurements(d.measurements)
+    if (d.orderForm) setOrderForm(d.orderForm)
+    setStyleOptions(d.styleOptions ?? {})
+  }
+
   const totalAmount = (Number(orderForm.tailoring_amount) || 0) + (Number(orderForm.extra_stitching_amount) || 0) + (Number(orderForm.other_charges_amount) || 0)
 
   const handleSearch = async () => {
@@ -103,6 +134,9 @@ export default function NewTailorOrder() {
       if (results.length === 0) {
         setCustomerForm((f) => ({ ...f, phone: phone.trim() }))
       }
+    } catch {
+      toast.error('No internet — customer search is unavailable. Enter the customer details by hand.')
+      setCustomerForm((f) => ({ ...f, phone: phone.trim() }))
     } finally {
       setSearching(false)
     }
@@ -159,7 +193,7 @@ export default function NewTailorOrder() {
         }
         toast.success(`Filled in from their last order (${last.order_number}) — please review before saving`)
       }
-    })
+    }).catch(() => setLoadingHistory(false)) // offline — customer is selected, just no history
   }
 
   const startNewCustomer = () => {
@@ -183,91 +217,78 @@ export default function NewTailorOrder() {
     }
 
     setSaving(true)
-    try {
-      const FIXED_KEYS = new Set([
-        'measurement_length', 'measurement_teera', 'measurement_chest', 'measurement_waist', 'measurement_hip',
-        'measurement_shoulder', 'measurement_sleeve_length', 'measurement_sleeve_round', 'measurement_neck',
-        'measurement_daman', 'measurement_shalwar_length', 'measurement_bottom', 'measurement_notes',
-      ])
-      const measurementPayload: Record<string, any> = {}
-      const customMeasurements: Record<string, number | null> = {}
-      Object.entries(measurements).forEach(([k, v]) => {
-        if (FIXED_KEYS.has(k)) {
-          measurementPayload[k] = k === 'measurement_notes' ? (v || null) : (v ? Number(v) : null)
-        } else {
-          customMeasurements[k] = v ? Number(v) : null
-        }
-      })
-      const hasCustom = Object.keys(customMeasurements).length > 0
+    const FIXED_KEYS = new Set([
+      'measurement_length', 'measurement_teera', 'measurement_chest', 'measurement_waist', 'measurement_hip',
+      'measurement_shoulder', 'measurement_sleeve_length', 'measurement_sleeve_round', 'measurement_neck',
+      'measurement_daman', 'measurement_shalwar_length', 'measurement_bottom', 'measurement_notes',
+    ])
+    const measurementPayload: Record<string, any> = {}
+    const customMeasurements: Record<string, number | null> = {}
+    Object.entries(measurements).forEach(([k, v]) => {
+      if (FIXED_KEYS.has(k)) {
+        measurementPayload[k] = k === 'measurement_notes' ? (v || null) : (v ? Number(v) : null)
+      } else {
+        customMeasurements[k] = v ? Number(v) : null
+      }
+    })
+    const hasCustom = Object.keys(customMeasurements).length > 0
 
-      let customerId = selectedCustomer?.tailor_customer_id
-      if (!customerId) {
-        const created = await AddOrUpdateTailorCustomer({
+    // Same sanity check the server applies — done here too so a typo is
+    // caught NOW, not later when an offline order is uploaded.
+    for (const [field, val] of Object.entries(measurementPayload)) {
+      if (field === 'measurement_notes') continue
+      if (typeof val === 'number' && (val < 0 || val > 200)) {
+        toast.error(`${field.replace('measurement_', '').replace(/_/g, ' ')} measurement (${val}) looks wrong — please re-check what was typed.`)
+        setSaving(false)
+        return
+      }
+    }
+
+    const customerData: any = selectedCustomer
+      ? {
+          tailor_customer_id: selectedCustomer.tailor_customer_id,
+          customer_name: selectedCustomer.customer_name,
+          phone: selectedCustomer.phone,
+          email: selectedCustomer.email || '',
+          address: selectedCustomer.address || '',
+          ...measurementPayload,
+          ...(hasCustom ? { custom_measurements: customMeasurements } : {}),
+        }
+      : {
           customer_name: customerForm.customer_name,
           phone: customerForm.phone || phone,
           email: customerForm.email,
           address: customerForm.address,
           ...measurementPayload,
           ...(hasCustom ? { custom_measurements: customMeasurements } : {}),
-        } as any)
-        customerId = created.tailor_customer_id
-      } else {
-        await AddOrUpdateTailorCustomer({
-          tailor_customer_id: customerId,
-          customer_name: selectedCustomer!.customer_name,
-          phone: selectedCustomer!.phone,
-          email: selectedCustomer!.email || '',
-          address: selectedCustomer!.address || '',
-          ...measurementPayload,
-          ...(hasCustom ? { custom_measurements: customMeasurements } : {}),
-        } as any)
-      }
-
-      const order = await AddTailorOrder({
-        tailor_customer_id: customerId!,
-        garment_type: orderForm.garment_type,
-        fabric_details: orderForm.fabric_details,
-        quantity: Number(orderForm.quantity) || 1,
-        tailoring_amount: Number(orderForm.tailoring_amount) || 0,
-        extra_stitching_amount: Number(orderForm.extra_stitching_amount) || 0,
-        other_charges_amount: Number(orderForm.other_charges_amount) || 0,
-        advance_paid: Number(orderForm.advance_paid) || 0,
-        promised_date: orderForm.promised_date || undefined,
-        taken_by: takenBy,
-        notes: orderForm.notes,
-        delivery_method: orderForm.delivery_method,
-        delivery_address: orderForm.delivery_address,
-        delivery_phone: orderForm.delivery_phone,
-        design_number: orderForm.design_number,
-        size_1: orderForm.size_1,
-        size_2: orderForm.size_2,
-        pocket_style: orderForm.pocket_style,
-        collar_style: orderForm.collar_style,
-        collar_cut: orderForm.collar_cut,
-        qurta_style: orderForm.qurta_style,
-        style_options: styleOptions,
-      })
-
-      toast.success(`Order ${order.order_number} created!`)
-      setLastOrderNumber(order.order_number)
-
-      if (photoFiles.length > 0) {
-        try {
-          const upload = await UploadEntityPhotos('tailor_order', order.tailor_order_id, photoFiles, takenBy)
-          if (!upload.success) toast.error(`Order saved, but the photos were not uploaded: ${upload.error}`)
-        } catch (photoErr) {
-          console.error('Failed to upload photos:', photoErr)
-          toast.error('Order saved, but photos failed to upload')
         }
-        setPhotoFiles([])
-      }
 
-      const fullOrder = await FetchTailorOrderById(order.tailor_order_id)
-      if (fullOrder) {
-        setLastOrderData(fullOrder)
-        setPendingThermalPrint(true)
-      }
+    const orderData = {
+      garment_type: orderForm.garment_type,
+      fabric_details: orderForm.fabric_details,
+      quantity: Number(orderForm.quantity) || 1,
+      tailoring_amount: Number(orderForm.tailoring_amount) || 0,
+      extra_stitching_amount: Number(orderForm.extra_stitching_amount) || 0,
+      other_charges_amount: Number(orderForm.other_charges_amount) || 0,
+      advance_paid: Number(orderForm.advance_paid) || 0,
+      promised_date: orderForm.promised_date || undefined,
+      taken_by: takenBy,
+      notes: orderForm.notes,
+      delivery_method: orderForm.delivery_method,
+      delivery_address: orderForm.delivery_address,
+      delivery_phone: orderForm.delivery_phone,
+      design_number: orderForm.design_number,
+      size_1: orderForm.size_1,
+      size_2: orderForm.size_2,
+      pocket_style: orderForm.pocket_style,
+      collar_style: orderForm.collar_style,
+      collar_cut: orderForm.collar_cut,
+      qurta_style: orderForm.qurta_style,
+      style_options: styleOptions,
+    }
 
+    const resetForm = () => {
+      draft.clear()
       setSelectedCustomer(null)
       setSearchResults([])
       setPhone('')
@@ -281,8 +302,71 @@ export default function NewTailorOrder() {
         pocket_style: 'none', collar_style: 'none', collar_cut: 'none', qurta_style: 'none',
       })
       setStyleOptions({})
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to create order')
+    }
+
+    const key = newClientKey()
+
+    // Keep it on this computer and upload automatically later. Used when
+    // offline, or when the connection drops mid-way (the SAME keys are
+    // reused, so steps the server already did are never repeated).
+    const saveOffline = async () => {
+      const uid = (session?.user as any)?.id
+      if (!uid) { toast.error('Not signed in — your entries are kept.'); return }
+      try {
+        await enqueue({
+          key, kind: 'tailor', userId: String(uid),
+          payload: { customer: customerData, order: orderData },
+          photos: photoFiles.length > 0 ? photoFiles : undefined,
+          label: `${orderForm.garment_type} · ${selectedCustomer?.customer_name || customerForm.customer_name} · ${totalAmount}`,
+        })
+      } catch {
+        toast.error('Could not save this order on the computer (browser storage unavailable). Your entries are kept.')
+        return
+      }
+      toast.success('Saved on this computer — it will upload automatically when the internet returns. No receipt until then.')
+      setPhotoFiles([])
+      resetForm()
+    }
+
+    try {
+      if (!online) { await saveOffline(); return }
+
+      let order: any
+      try {
+        const c: any = await SubmitTailorCustomerOnce(customerData, `${key}-c`)
+        if (!c.success) { toast.error(c.message || 'Failed to save the customer'); return }
+        const o: any = await SubmitTailorOrderOnce({ ...orderData, tailor_customer_id: Number(c.customer.tailor_customer_id) }, key)
+        if (!o.success) { toast.error(o.message || 'Failed to create order'); return }
+        order = o.order
+      } catch {
+        await saveOffline() // connection dropped mid-way
+        return
+      }
+
+      toast.success(`Order ${order.order_number} created!`)
+      draft.clear()
+      setLastOrderNumber(order.order_number)
+
+      if (photoFiles.length > 0) {
+        try {
+          const upload = await UploadEntityPhotos('tailor_order', order.tailor_order_id, photoFiles, takenBy)
+          if (!upload.success) toast.error(`Order saved, but the photos were not uploaded: ${upload.error}`)
+        } catch (photoErr) {
+          console.error('Failed to upload photos:', photoErr)
+          toast.error('Order saved, but photos failed to upload')
+        }
+        setPhotoFiles([])
+      }
+
+      try {
+        const fullOrder = await FetchTailorOrderById(order.tailor_order_id)
+        if (fullOrder) {
+          setLastOrderData(fullOrder)
+          setPendingThermalPrint(true)
+        }
+      } catch { /* order is saved; only the receipt preview failed */ }
+
+      resetForm()
     } finally {
       setSaving(false)
     }
@@ -321,6 +405,10 @@ export default function NewTailorOrder() {
                 </>
               )}
             </div>
+          )}
+
+          {draft.pending && (
+            <DraftBanner savedAt={draft.pending.savedAt} label="tailor order" onResume={resumeDraft} onDiscard={draft.discard} />
           )}
 
           <form onSubmit={handleSubmit}>
@@ -634,7 +722,7 @@ export default function NewTailorOrder() {
                     </div>
 
                     <button type="submit" className="btn bg-navy btn-flat btn-block" disabled={saving}>
-                      {saving ? 'Saving...' : 'Create Order'}
+                      {saving ? 'Saving...' : !online ? 'Save Offline (uploads later)' : 'Create Order'}
                     </button>
                   </div>
                 </div>

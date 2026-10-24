@@ -9,6 +9,8 @@ import Navigation from "@/components/Navigation";
 import UserProfile from "@/components/UserProfile";
 import ThemeProvider from "@/components/ThemeProvider";
 import { Toaster } from "sonner";
+import OfflineBanner from "@/components/shared/OfflineBanner";
+import OfflineSyncProvider from "@/components/shared/OfflineSyncProvider";
 import NextNProgress from "nextjs-progressbar";
 import { useEffect } from "react";
 
@@ -48,6 +50,8 @@ export default function RootLayout({
         />
 
         <Providers>
+          <OfflineBanner />
+          <OfflineSyncProvider />
           <div className="wrapper">
             <Header />
 

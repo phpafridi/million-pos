@@ -1103,3 +1103,20 @@ model tbl_grn_item {
   @@index([grn_id])
   @@map("tbl_grn_item")
 }
+
+// One row per order submitted from a browser with a client-generated key.
+// Lets the POS retry a submission safely after a dropped connection: if the
+// first attempt actually reached the server, the retry returns the stored
+// result instead of creating a second order/purchase.
+model tbl_client_submission {
+  submission_id Int      @id @default(autoincrement())
+  client_key    String   @unique @db.VarChar(64)
+  kind          String   @db.VarChar(24)
+  user_id       String   @db.VarChar(40)
+  status        String   @default("processing") @db.VarChar(12) // processing | done
+  result        Json?
+  created_at    DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([created_at])
+  @@map("tbl_client_submission")
+}

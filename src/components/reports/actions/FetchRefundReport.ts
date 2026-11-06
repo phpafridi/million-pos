@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getShopScope, scopeWhere } from '@/lib/getShopScope'
+import { paidShare } from '@/lib/refundMath'
 
 export interface RefundRow {
   returnId: number
@@ -12,7 +13,8 @@ export interface RefundRow {
   invoiceNo: string | null
   shopName: string
   method: string
-  amount: number
+  amount: number          // money value: what the customer had actually paid for these items
+  listedAmount: number    // same items at full selling price (before any order discount)
   orderTotal: number
   items: string
   processedBy: string
@@ -45,7 +47,7 @@ export default async function FetchRefundReport(startDate: string, endDate: stri
         shop: { select: { shop_name: true } },
         order: {
           select: {
-            order_id: true, order_no: true, order_number: true, grand_total: true,
+            order_id: true, order_no: true, order_number: true, grand_total: true, sub_total: true,
             invoices: { select: { invoice_number: true } },
           },
         },
@@ -55,7 +57,9 @@ export default async function FetchRefundReport(startDate: string, endDate: stri
     })
 
     const rows: RefundRow[] = returns.map(r => {
-      const amount = Math.round(r.items.reduce((s, i) => s + Number(i.sub_total), 0) * 100) / 100
+      const listed = r.items.reduce((s, i) => s + Number(i.sub_total), 0)
+      const share = paidShare(Number(r.order.grand_total), Number(r.order.sub_total))
+      const amount = Math.round(listed * share * 100) / 100
       return {
         returnId: r.return_id,
         returnNo: `RET-${r.return_no}`,
@@ -66,6 +70,7 @@ export default async function FetchRefundReport(startDate: string, endDate: stri
         shopName: r.shop?.shop_name ?? '—',
         method: METHOD_LABEL[r.refund_method || 'cash'] || (r.refund_method ?? 'Cash'),
         amount,
+        listedAmount: Math.round(listed * 100) / 100,
         orderTotal: Number(r.order.grand_total),
         items: r.items.map(i => `${i.product_name} × ${Number(i.qty)}`).join(', '),
         processedBy: r.processed_by,

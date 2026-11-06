@@ -1,4 +1,7 @@
 import { prisma } from '@/lib/prisma'
+import { paidShare } from '@/lib/refundMath'
+
+export { paidShare }
 
 // Money refunded to customers (payment returns only — an exchange moves no
 // money) per order, plus how many units of each product came back.
@@ -6,6 +9,11 @@ import { prisma } from '@/lib/prisma'
 // A payment refund marks the whole order as returned (status 3) even when only
 // SOME items came back. Screens and reports use this to show what the sale is
 // really worth now: order total − refunded.
+//
+// Returned items are recorded at their full selling price. If the order had a
+// discount, the customer never paid that full price, so the money value of a
+// refund is scaled by (what was paid ÷ price before discount). Example from
+// live data: 2600 item, 2500 discount, customer paid 100 → refund worth 100.
 export type OrderRefund = { amount: number; qtyByProduct: Map<number, number> }
 
 export async function getRefundsByOrder(orderIds: number[]): Promise<Map<number, OrderRefund>> {
@@ -17,13 +25,15 @@ export async function getRefundsByOrder(orderIds: number[]): Promise<Map<number,
       where: { order_id: { in: chunk }, return_type: 'payment' },
       select: {
         order_id: true,
+        order: { select: { grand_total: true, sub_total: true } },
         items: { where: { item_type: 'returned' }, select: { product_id: true, qty: true, sub_total: true } },
       },
     })
     for (const r of returns) {
       const cur = map.get(r.order_id) ?? { amount: 0, qtyByProduct: new Map<number, number>() }
+      const share = paidShare(Number(r.order.grand_total), Number(r.order.sub_total))
       for (const it of r.items) {
-        cur.amount += Number(it.sub_total)
+        cur.amount += Number(it.sub_total) * share
         cur.qtyByProduct.set(it.product_id, (cur.qtyByProduct.get(it.product_id) ?? 0) + Number(it.qty))
       }
       map.set(r.order_id, cur)

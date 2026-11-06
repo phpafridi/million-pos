@@ -256,7 +256,14 @@ export default function SalesReport() {
                         <td style={{ fontSize: 12, textAlign: 'left' }}>{r.items}</td>
                         <td>{r.method}</td>
                         <td>{r.orderTotal.toFixed(2)}</td>
-                        <td className="refund-amt">{r.amount.toFixed(2)}</td>
+                        <td className="refund-amt">
+                          {r.amount.toFixed(2)}
+                          {r.listedAmount - r.amount > 0.005 && (
+                            <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 400 }} title="Items were sold at a discount — this is what the customer actually paid for them">
+                              list price {r.listedAmount.toFixed(2)}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ fontSize: 12 }}>{r.processedBy}</td>
                       </tr>
                     ))}

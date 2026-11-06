@@ -6,6 +6,8 @@ import SalesReportPDF from './SalesReportPDF'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import { GetBusinessProfile } from '../settings/actions/GetBusinessProfile'
 import { fetchCurrency } from '../settings/actions/fetchCurrency'
+import FetchRefundReport, { RefundReport } from './actions/FetchRefundReport'
+import Link from 'next/link'
 
 export default function SalesReport() {
   const { data: session } = useSession()
@@ -16,17 +18,23 @@ export default function SalesReport() {
   const [loading, setLoading]     = useState(false)
   const [company, setCompany]     = useState<string>('')
   const [currency, setCurrency]   = useState('Rs')
+  const [refunds, setRefunds]     = useState<RefundReport>({ rows: [], total: 0, byMethod: [], byShop: [] })
+  const [tab, setTab]             = useState<'sales' | 'refunds'>('sales')
+  const [generated, setGenerated] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!startDate || !endDate) return
     setLoading(true)
-    const [data, profile, cur] = await Promise.all([
+    const [data, profile, cur, ref] = await Promise.all([
       FetchSalesReport(startDate, endDate),
       GetBusinessProfile(),
       fetchCurrency(),
+      FetchRefundReport(startDate, endDate),
     ])
     setReport(data)
+    setRefunds(ref)
+    setGenerated(true)
     setCompany(profile?.company_name || '')
     setCurrency(cur?.currency || 'Rs')
     setLoading(false)
@@ -38,6 +46,7 @@ export default function SalesReport() {
   const totalProfit  = report.reduce((s, r) => s + r.profit,      0)
   const totalTax     = report.reduce((s, r) => s + r.tax,         0)
   const totalDisc    = report.reduce((s, r) => s + r.discount,    0)
+  const totalRefundedOnSales = report.reduce((s, r) => s + (r.refunded || 0), 0)
   const profitMargin = totalSelling > 0 ? ((totalProfit / totalSelling) * 100).toFixed(1) : '0.0'
 
   const fmt = (n: number) => `${currency} ${n.toFixed(2)}`
@@ -47,7 +56,7 @@ export default function SalesReport() {
     const area = document.getElementById('rpt-print')?.innerHTML
     if (!area) return
     const w = window.open('', '', 'width=1100,height=800')
-    w?.document.write(`<html><head><title>Sales Report</title><style>
+    w?.document.write(`<html><head><title>${tab === 'refunds' ? 'Refund Report' : 'Sales Report'}</title><style>
       *{box-sizing:border-box;margin:0;padding:0;}
       body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#1a1a2e;background:#fff;padding:28px;}
       .rpt-header{text-align:center;margin-bottom:24px;border-bottom:3px solid #1a1a2e;padding-bottom:16px;}
@@ -112,6 +121,13 @@ export default function SalesReport() {
         .inv-badge{background:#eef2ff;color:#4338ca;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;font-family:monospace;}
         .rpt-empty{text-align:center;padding:60px 20px;color:#9ca3af;}
         .rpt-empty i{font-size:48px;display:block;margin-bottom:12px;opacity:.4;}
+        .rpt-tabs{display:flex;gap:4px;padding:0 28px;background:#fff;border-bottom:1px solid #e5e7eb;}
+        .rpt-tab{padding:12px 20px;border:none;background:none;font-size:13px;font-weight:700;color:#6b7280;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;}
+        .rpt-tab.active{color:#1a1a2e;border-bottom-color:#1a1a2e;}
+        .rpt-tab .cnt{display:inline-block;margin-left:6px;background:#eef2ff;color:#4338ca;border-radius:10px;padding:0 7px;font-size:11px;}
+        .rpt-tab.refund.active{color:#b91c1c;border-bottom-color:#dc2626;} .rpt-tab.refund .cnt{background:#fee2e2;color:#b91c1c;}
+        .refund-amt{color:#dc2626;font-weight:700;}
+        .rpt-sub{font-size:13px;font-weight:700;color:#1a1a2e;margin:22px 0 10px;}
         @media print{.no-print{display:none!important;}}
       `}</style>
 
@@ -139,13 +155,25 @@ export default function SalesReport() {
           </div>
         </div>
 
+        {/* Tabs */}
+        {generated && (
+          <div className="rpt-tabs no-print">
+            <button className={`rpt-tab${tab === 'sales' ? ' active' : ''}`} onClick={() => setTab('sales')}>
+              <i className="fa fa-bar-chart" style={{ marginRight: 6 }} />Sales<span className="cnt">{report.length}</span>
+            </button>
+            <button className={`rpt-tab refund${tab === 'refunds' ? ' active' : ''}`} onClick={() => setTab('refunds')}>
+              <i className="fa fa-undo" style={{ marginRight: 6 }} />Refunds<span className="cnt">{refunds.rows.length}</span>
+            </button>
+          </div>
+        )}
+
         {/* Action buttons */}
-        {report.length > 0 && (
+        {((tab === 'sales' && report.length > 0) || (tab === 'refunds' && refunds.rows.length > 0)) && (
           <div className="rpt-actions no-print">
             <button className="rpt-btn rpt-btn-print" onClick={printReport}>
               <i className="fa fa-print" style={{ marginRight: 6 }} />Print
             </button>
-            <PDFDownloadLink
+            {tab === 'sales' && <PDFDownloadLink
               document={<SalesReportPDF startDate={startDate} endDate={endDate} report={report} totals={{ totalCost, totalRevenue: totalSelling, totalProfit, totalGrand }} />}
               fileName={`sales-report-${startDate}-to-${endDate}.pdf`}
             >
@@ -154,18 +182,100 @@ export default function SalesReport() {
                   {pdfLoading ? 'Preparing…' : <><i className="fa fa-file-pdf-o" style={{ marginRight: 6 }} />Download PDF</>}
                 </button>
               )}
-            </PDFDownloadLink>
+            </PDFDownloadLink>}
             <span style={{ marginLeft: 'auto', color: '#6b7280', fontSize: 12 }}>
-              {report.length} transaction{report.length !== 1 ? 's' : ''} &nbsp;·&nbsp; {startDate} → {endDate}
+              {tab === 'sales'
+                ? <>{report.length} transaction{report.length !== 1 ? 's' : ''}</>
+                : <>{refunds.rows.length} refund{refunds.rows.length !== 1 ? 's' : ''}</>}
+              &nbsp;·&nbsp; {startDate} → {endDate}
             </span>
           </div>
         )}
 
         <div className="rpt-body">
-          {report.length === 0 ? (
+          {tab === 'refunds' && generated ? (
+            refunds.rows.length === 0 ? (
+              <div className="rpt-empty">
+                <i className="fa fa-undo" />
+                {loading ? 'Loading…' : 'No refunds in this date range.'}
+              </div>
+            ) : (
+            <div id="rpt-print">
+              <div className="rpt-header" style={{ display: 'none' }} id="print-header-refunds">
+                <h1>{company || 'Refund Report'}</h1>
+                <p>Refund Report &nbsp;|&nbsp; {startDate} to {endDate} &nbsp;|&nbsp; Generated: {today}</p>
+              </div>
+              <style>{`@media print { #print-header-refunds { display: block !important; } }`}</style>
+
+              <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+                <div className="kpi-card red"><div className="kpi-label">Total Refunded</div><div className="kpi-value red">{fmt(refunds.total)}</div></div>
+                <div className="kpi-card"><div className="kpi-label">Refunds</div><div className="kpi-value">{refunds.rows.length}</div></div>
+                {refunds.byMethod.map(m => (
+                  <div key={m.method} className="kpi-card amber"><div className="kpi-label">{m.method} ({m.count})</div><div className="kpi-value amber">{fmt(m.total)}</div></div>
+                ))}
+              </div>
+
+              {isSuperAdmin && refunds.byShop.length > 0 && (
+                <>
+                  <div className="rpt-sub">Refunds by Franchise</div>
+                  <div className="rpt-table-wrap" style={{ marginBottom: 20 }}>
+                    <table className="rpt-table">
+                      <thead><tr><th>Franchise</th><th>Refunds</th><th>Total Refunded</th></tr></thead>
+                      <tbody>
+                        {refunds.byShop.map(s => (
+                          <tr key={s.shopName}><td>{s.shopName}</td><td>{s.count}</td><td className="refund-amt">{s.total.toFixed(2)}</td></tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr><td>TOTAL</td><td>{refunds.rows.length}</td><td>{refunds.total.toFixed(2)}</td></tr></tfoot>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              <div className="rpt-sub">Refunded Invoices</div>
+              <div className="rpt-table-wrap">
+                <table className="rpt-table">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Refund No</th><th>Date</th><th>Invoice No</th><th>Order No</th>
+                      {isSuperAdmin && <th>Franchise</th>}
+                      <th>Items Returned</th><th>Method</th><th>Invoice Total</th><th>Refunded</th><th>By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {refunds.rows.map((r, i) => (
+                      <tr key={r.returnId}>
+                        <td style={{ color: '#9ca3af', fontSize: 11 }}>{i + 1}</td>
+                        <td><span className="inv-badge" style={{ background: '#fee2e2', color: '#b91c1c' }}>{r.returnNo}</span></td>
+                        <td>{new Date(r.returnDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                        <td><span className="inv-badge">{r.invoiceNo ?? '—'}</span></td>
+                        <td>
+                          <Link href={`/dashboard/order-process/invoice/${r.orderId}?isOrder=true`}>{r.orderNumber}</Link>
+                        </td>
+                        {isSuperAdmin && <td style={{ fontSize: 12, color: '#4b5563' }}>{r.shopName}</td>}
+                        <td style={{ fontSize: 12, textAlign: 'left' }}>{r.items}</td>
+                        <td>{r.method}</td>
+                        <td>{r.orderTotal.toFixed(2)}</td>
+                        <td className="refund-amt">{r.amount.toFixed(2)}</td>
+                        <td style={{ fontSize: 12 }}>{r.processedBy}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={isSuperAdmin ? 9 : 8}>TOTAL REFUNDED ({refunds.rows.length} refund{refunds.rows.length !== 1 ? 's' : ''})</td>
+                      <td style={{ color: '#dc2626' }}>{refunds.total.toFixed(2)}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+            )
+          ) : report.length === 0 ? (
             <div className="rpt-empty">
               <i className="fa fa-bar-chart" />
-              {loading ? 'Loading…' : 'Select a date range and click Generate to view the report.'}
+              {loading ? 'Loading…' : generated ? 'No sales in this date range.' : 'Select a date range and click Generate to view the report.'}
             </div>
           ) : (
             <div id="rpt-print">
@@ -185,6 +295,11 @@ export default function SalesReport() {
                 <div className="kpi-card"><div className="kpi-label">Total Discount</div><div className="kpi-value">{fmt(totalDisc)}</div></div>
                 <div className="kpi-card red"><div className="kpi-label">Total Tax</div><div className="kpi-value red">{fmt(totalTax)}</div></div>
               </div>
+              {totalRefundedOnSales > 0 && (
+                <div style={{ margin: '-12px 0 16px', fontSize: 12, color: '#b91c1c' }}>
+                  <i className="fa fa-info-circle" /> Totals are after refunds — {fmt(totalRefundedOnSales)} refunded on invoices in this list. See the Refunds tab for details.
+                </div>
+              )}
 
               {/* Table */}
               <div className="rpt-table-wrap">
@@ -193,7 +308,7 @@ export default function SalesReport() {
                     <tr>
                       <th>#</th><th>Invoice No</th><th>Date</th>
                       {isSuperAdmin && <th>Franchise</th>}
-                      <th>Cost</th><th>Selling</th><th>Tax</th><th>Discount</th><th>Grand Total</th><th>Profit</th>
+                      <th>Cost</th><th>Selling</th><th>Tax</th><th>Discount</th><th>Refunded</th><th>Grand Total</th><th>Profit</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -207,6 +322,7 @@ export default function SalesReport() {
                         <td>{row.sellingCost.toFixed(2)}</td>
                         <td>{row.tax.toFixed(2)}</td>
                         <td>{row.discount.toFixed(2)}</td>
+                        <td className={row.refunded > 0 ? 'refund-amt' : ''}>{row.refunded > 0 ? `-${row.refunded.toFixed(2)}` : '—'}</td>
                         <td style={{ fontWeight: 700 }}>{row.grandTotal.toFixed(2)}</td>
                         <td className="profit-cell">{row.profit.toFixed(2)}</td>
                       </tr>
@@ -214,11 +330,12 @@ export default function SalesReport() {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={3}>TOTALS ({report.length} records)</td>
+                      <td colSpan={isSuperAdmin ? 4 : 3}>TOTALS ({report.length} records)</td>
                       <td>{totalCost.toFixed(2)}</td>
                       <td>{totalSelling.toFixed(2)}</td>
                       <td>{totalTax.toFixed(2)}</td>
                       <td>{totalDisc.toFixed(2)}</td>
+                      <td style={{ color: '#dc2626' }}>{totalRefundedOnSales > 0 ? `-${totalRefundedOnSales.toFixed(2)}` : '—'}</td>
                       <td>{totalGrand.toFixed(2)}</td>
                       <td style={{ color: '#16a34a' }}>{totalProfit.toFixed(2)}</td>
                     </tr>

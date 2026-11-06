@@ -1,6 +1,8 @@
 'use server'
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
+import { Prisma } from '@/generated/prisma/client'
+import { NET_ORDERS } from '@/lib/netOrdersSql'
 
 export type ProductByShopRow = { product: string; [shopName: string]: number | string }
 
@@ -21,20 +23,43 @@ export async function getTopProductsByShop(): Promise<{ rows: ProductByShopRow[]
   const shopNames = shops.map(s => s.shop_name)
   const shopIdToName = new Map(shops.map(s => [s.shop_id, s.shop_name]))
 
-  // Find the network-wide top 5 products by quantity sold.
-  // order_status 2 = confirmed, 4 = exchanged (still counts — the item
-  // stayed sold, just swapped). 3 = refunded is excluded, same rule
-  // used everywhere else revenue/sales get calculated — an order that
-  // was refunded shouldn't count toward "top selling" either.
-  const topGroups = await prisma.tbl_order_details.groupBy({
-    by: ['product_id'],
-    where: allShops
-      ? { order: { order_status: { in: [2, 4] } } }
-      : { order: { shop_id: scope.shopId ?? -1, order_status: { in: [2, 4] } } },
-    _sum: { product_quantity: true },
-    orderBy: { _sum: { product_quantity: 'desc' } },
-    take: 5,
-  })
+  // Quantity sold per product per shop, minus what customers brought back
+  // for a refund. Confirmed + exchanged orders plus partially refunded ones
+  // (see netOrdersSql.ts); fully refunded orders don't count as sold.
+  const shopFilter = allShops ? Prisma.sql`` : Prisma.sql`AND o.shop_id = ${scope.shopId ?? -1}`
+  const soldRows: any[] = await prisma.$queryRaw`
+    SELECT d.product_id, o.shop_id, COALESCE(SUM(CAST(d.product_quantity AS DOUBLE)), 0) AS qty
+    FROM tbl_order_details d
+    JOIN ${NET_ORDERS} o ON o.order_id = d.order_id
+    WHERE o.order_status IN (2, 4) ${shopFilter}
+    GROUP BY d.product_id, o.shop_id`
+  const backRows: any[] = await prisma.$queryRaw`
+    SELECT ri.product_id, o.shop_id, COALESCE(SUM(CAST(ri.qty AS DOUBLE)), 0) AS qty
+    FROM tbl_return r
+    JOIN tbl_return_item ri ON ri.return_id = r.return_id
+    JOIN ${NET_ORDERS} o ON o.order_id = r.order_id
+    WHERE r.return_type = 'payment' AND ri.item_type = 'returned' AND o.order_status IN (2, 4) ${shopFilter}
+    GROUP BY ri.product_id, o.shop_id`
+
+  const byProductShop = new Map<string, number>()
+  const byProduct = new Map<number, number>()
+  const addQty = (rows: any[], sign: number) => {
+    for (const r of rows) {
+      const shopName = shopIdToName.get(Number(r.shop_id))
+      if (!shopName) continue
+      const key = `${Number(r.product_id)}|${shopName}`
+      byProductShop.set(key, (byProductShop.get(key) || 0) + sign * Number(r.qty))
+      byProduct.set(Number(r.product_id), (byProduct.get(Number(r.product_id)) || 0) + sign * Number(r.qty))
+    }
+  }
+  addQty(soldRows, 1)
+  addQty(backRows, -1)
+
+  const topGroups = [...byProduct.entries()]
+    .filter(([, q]) => q > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([product_id]) => ({ product_id }))
   const productIds = topGroups.map(g => g.product_id)
   if (productIds.length === 0) return { rows: [], shopNames }
 
@@ -43,25 +68,6 @@ export async function getTopProductsByShop(): Promise<{ rows: ProductByShopRow[]
     select: { product_id: true, product_name: true },
   })
   const productNameMap = new Map(products.map(p => [p.product_id, p.product_name]))
-
-  // Now get the per-shop breakdown for just these products
-  const details = await prisma.tbl_order_details.findMany({
-    where: {
-      product_id: { in: productIds },
-      order: allShops
-        ? { order_status: { in: [2, 4] } }
-        : { shop_id: scope.shopId ?? -1, order_status: { in: [2, 4] } },
-    },
-    select: { product_id: true, product_quantity: true, order: { select: { shop_id: true } } },
-  })
-
-  const byProductShop = new Map<string, number>()
-  for (const d of details) {
-    const shopName = shopIdToName.get(d.order.shop_id)
-    if (!shopName) continue
-    const key = `${d.product_id}|${shopName}`
-    byProductShop.set(key, (byProductShop.get(key) || 0) + Number(d.product_quantity))
-  }
 
   const rows: ProductByShopRow[] = topGroups.map(g => {
     const row: ProductByShopRow = { product: productNameMap.get(g.product_id) || 'Unknown' }

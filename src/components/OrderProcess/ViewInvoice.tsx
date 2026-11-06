@@ -237,6 +237,14 @@ export default function ViewInvoice({ id, isOrder }: Props) {
 
   const canReturn = order.order_status === 2
 
+  // Money refunded so far (payment returns only — exchanges move no money).
+  const refundedAmount = Math.round(returns
+    .filter(r => r.return_type === 'payment')
+    .reduce((s, r) => s + r.items.filter(i => i.item_type === 'returned').reduce((a, i) => a + Number(i.sub_total), 0), 0) * 100) / 100
+  const netAfterRefund = Math.max(0, order.grand_total - refundedAmount)
+  // A refund marks the whole order as status 3 even when only part of it came back.
+  const isPartialRefund = order.order_status === 3 && refundedAmount > 0 && refundedAmount < order.grand_total - 0.005
+
   return (
     <div className="right-side" style={{ minHeight: '945px' }}>
       <section className="content-header text-center">
@@ -256,19 +264,22 @@ export default function ViewInvoice({ id, isOrder }: Props) {
                   <h3 className="box-title">{order.order_no}</h3>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     {isOrder && (
-                      <span className={`label ${statusLabelClass[order.order_status] || 'label-default'}`} style={{ fontSize: 12 }}>
-                        {statusMap[order.order_status]?.label || 'Unknown'}
+                      <span className={`label ${isPartialRefund ? 'label-warning' : (statusLabelClass[order.order_status] || 'label-default')}`} style={{ fontSize: 12 }}>
+                        {isPartialRefund ? 'Partially Refunded' : (statusMap[order.order_status]?.label || 'Unknown')}
                       </span>
                     )}
-                    <button onClick={() => printInvoice('printableArea')} className="btn btn-default btn-sm"><i className="fa fa-print"></i> Print</button>
-                    <span className="btn btn-default btn-sm" style={{ padding: '5px 10px' }}><InvoicePDF order={order} /></span>
+                    {/* Main print = the thermal receipt printer, same printer and layout as a new sale (Settings > Printer Settings). */}
                     <button
                       onClick={() => document.getElementById('hiddenPrintBtn')?.click()}
-                      className="btn btn-default btn-sm"
-                      title="Print via thermal receipt printer"
+                      className="btn btn-primary btn-sm"
+                      title="Print on the thermal receipt printer"
                     >
-                      <i className="fa fa-receipt"></i> Reprint Receipt
+                      <i className="fa fa-print"></i> Print Receipt
                     </button>
+                    <button onClick={() => printInvoice('printableArea')} className="btn btn-default btn-sm" title="Full-page (A4) print">
+                      <i className="fa fa-file-text-o"></i> A4
+                    </button>
+                    <span className="btn btn-default btn-sm" style={{ padding: '5px 10px' }}><InvoicePDF order={order} /></span>
                     {canReturn && (
                       <button className="btn btn-danger btn-sm" onClick={() => setShowReturnModal(true)}>
                         <i className="fa fa-undo" /> Return / Exchange
@@ -362,6 +373,12 @@ export default function ViewInvoice({ id, isOrder }: Props) {
                               <tr><td>Tax</td><td className="text-right">{order.tax}</td></tr>
                             )}
                             <tr style={{ borderTop: '2px solid #eee' }}><td><strong>Grand Total</strong></td><td className="text-right"><strong style={{ fontSize: 16 }}>{order.grand_total.toFixed(2)}</strong></td></tr>
+                            {refundedAmount > 0 && (
+                              <>
+                                <tr><td style={{ color: '#d9403a' }}><i className="fa fa-undo" style={{ marginRight: 4 }}></i>Refunded</td><td className="text-right" style={{ color: '#d9403a' }}>-{refundedAmount.toFixed(2)}</td></tr>
+                                <tr style={{ borderTop: '2px solid #eee' }}><td><strong>Net Total</strong></td><td className="text-right"><strong style={{ fontSize: 16 }}>{netAfterRefund.toFixed(2)}</strong></td></tr>
+                              </>
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -374,7 +391,7 @@ export default function ViewInvoice({ id, isOrder }: Props) {
                         </strong>
                         {returns.map((r) => (
                           <div key={r.return_id} style={{ marginTop: 6, background: '#fff8f8', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 10px', fontSize: 13 }}>
-                            <strong>RET-{r.return_no}</strong> — {r.return_type === 'payment' ? 'Payment Refund' : 'Exchange'} — {new Date(r.return_date).toLocaleDateString()} — by {r.processed_by}
+                            <strong>RET-{r.return_no}</strong> — {r.return_type === 'payment' ? `Payment Refund ${r.items.filter(i => i.item_type === 'returned').reduce((a, i) => a + Number(i.sub_total), 0).toFixed(2)}` : 'Exchange'} — {new Date(r.return_date).toLocaleDateString()} — by {r.processed_by}
                             {r.note && <span className="text-muted"> | Note: {r.note}</span>}
                           </div>
                         ))}

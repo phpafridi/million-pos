@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
+import { NET_ORDERS } from '@/lib/netOrdersSql'
 
 export interface ShopRollupRow {
   shop_id: number
@@ -39,15 +40,13 @@ export default async function FetchShopRollup(startDate: string, endDate: string
 
   for (const shop of shops) {
     const [salesAgg, purchaseAgg] = await Promise.all([
-      prisma.tbl_order.aggregate({
-        where: {
-          shop_id: shop.shop_id,
-          order_status: { in: [2, 4] }, // confirmed + exchanged only — matches every other revenue report (excludes pending/unpaid and refunded)
-          order_date: { gte: start, lte: end },
-        },
-        _sum: { grand_total: true },
-        _count: { order_id: true },
-      }),
+      // Confirmed + exchanged, plus partially refunded orders at what's left
+      // after the refund (see netOrdersSql.ts). Fully refunded orders drop out.
+      prisma.$queryRaw<any[]>`
+        SELECT COALESCE(SUM(CAST(grand_total AS DOUBLE)), 0) AS total, COUNT(*) AS cnt
+        FROM ${NET_ORDERS} AS tbl_order
+        WHERE shop_id = ${shop.shop_id} AND order_status IN (2, 4)
+          AND order_date >= ${start} AND order_date <= ${end}`,
       prisma.tbl_purchase.aggregate({
         where: {
           shop_id: shop.shop_id,
@@ -63,8 +62,8 @@ export default async function FetchShopRollup(startDate: string, endDate: string
       shop_code: shop.shop_code,
       shop_name: shop.shop_name,
       is_active: shop.is_active,
-      sales_total: Number(salesAgg._sum.grand_total || 0),
-      sales_count: salesAgg._count.order_id,
+      sales_total: Number(salesAgg[0]?.total || 0),
+      sales_count: Number(salesAgg[0]?.cnt || 0),
       purchase_total: Number(purchaseAgg._sum.grand_total || 0),
       purchase_count: purchaseAgg._count.purchase_id,
     })

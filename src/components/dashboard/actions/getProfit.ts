@@ -1,32 +1,19 @@
 'use server'
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
+import { posProfitByShop } from '@/lib/posProfit'
 
 export async function getProfit() {
   const scope = await getShopScope()
   const allShops = scope.isSuperAdmin || scope.shopId === null
 
-  // Status 2 = confirmed, Status 4 = exchanged (revenue kept)
-  // Status 3 = refunded — excluded
-  const posResult: any[] = allShops
-    ? await prisma.$queryRaw`
-        SELECT
-          COALESCE(SUM(CAST(grand_total      AS DOUBLE)), 0) AS total,
-          COALESCE(SUM(CAST(total_tax        AS DOUBLE)), 0) AS tax,
-          COALESCE(SUM(CAST(discount_amount  AS DOUBLE)), 0) AS discount
-        FROM tbl_order
-        WHERE order_status IN (2, 4)
-      `
-    : await prisma.$queryRaw`
-        SELECT
-          COALESCE(SUM(CAST(grand_total      AS DOUBLE)), 0) AS total,
-          COALESCE(SUM(CAST(total_tax        AS DOUBLE)), 0) AS tax,
-          COALESCE(SUM(CAST(discount_amount  AS DOUBLE)), 0) AS discount
-        FROM tbl_order
-        WHERE order_status IN (2, 4) AND shop_id = ${scope.shopId}
-      `
-  const row = posResult[0] || {}
-  const posProfit = Number(row.total || 0) - Number(row.tax || 0) - Number(row.discount || 0)
+  // Real profit — selling − cost − discount, after refunds (same formula as
+  // the Sales Report). The old version used grand_total − tax − discount,
+  // which never subtracted the cost of goods and took the discount off twice.
+  const byShop = await posProfitByShop()
+  const posProfit = allShops
+    ? [...byShop.values()].reduce((s, v) => s + v, 0)
+    : (byShop.get(scope.shopId ?? -1) ?? 0)
 
   // Tailor payments have no separate tax/discount tracked — cash received
   // (advance_paid) is treated as profit directly, same cash-basis logic

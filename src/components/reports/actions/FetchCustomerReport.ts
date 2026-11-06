@@ -1,6 +1,7 @@
 'use server'
 import { prisma } from '@/lib/prisma'
 import { getShopScope, scopeWhere } from '@/lib/getShopScope'
+import { getRefundsByOrder } from '@/lib/orderRefunds'
 import { sharedOrOwnWhere } from '@/lib/syncSettings'
 
 export type CustomerReportRow = {
@@ -49,16 +50,24 @@ export async function FetchCustomerReport(startDate: string, endDate: string): P
 
   const orderWhere = scope.isSuperAdmin ? {} : scopeWhere(scope)
 
-  const [posOrders, tailorOrders] = await Promise.all([
+  const [posOrdersRaw, tailorOrders] = await Promise.all([
     prisma.tbl_order.findMany({
-      where: { ...orderWhere, order_date: { gte: start, lte: end }, order_status: { in: [2, 4] } },
-      select: { customer_id: true, grand_total: true, order_date: true, shop_id: true },
+      // 3 = refunded: kept here only when part of the order is still standing
+      // (partial refund) — see the refund adjustment just below.
+      where: { ...orderWhere, order_date: { gte: start, lte: end }, order_status: { in: [2, 3, 4] } },
+      select: { order_id: true, order_status: true, customer_id: true, grand_total: true, order_date: true, shop_id: true },
     }),
     prisma.tbl_tailor_order.findMany({
       where: { ...orderWhere, order_date: { gte: start, lte: end }, status: { not: 'cancelled' } },
       select: { customer_id: true, price: true, order_date: true, shop_id: true },
     }),
   ])
+
+  // Take refunds off each order; a fully refunded order no longer counts.
+  const refunds = await getRefundsByOrder(posOrdersRaw.map(o => o.order_id))
+  const posOrders = posOrdersRaw
+    .map(o => ({ ...o, grand_total: Math.max(0, Number(o.grand_total) - (refunds.get(o.order_id)?.amount ?? 0)) }))
+    .filter(o => o.order_status !== 3 || o.grand_total > 0.005)
 
   const posMap = new Map<number, { count: number; total: number; last: Date }>()
   const customerShopIds = new Map<number, Set<number>>()
@@ -136,12 +145,10 @@ export async function FetchCustomerReport(startDate: string, endDate: string): P
       select: { shop_id: true, shop_name: true, shop_code: true },
       orderBy: { shop_id: 'asc' },
     })
-    const posByShop = await prisma.tbl_order.groupBy({
-      by: ['shop_id'],
-      where: { order_date: { gte: start, lte: end }, order_status: { in: [2, 4] } },
-      _sum: { grand_total: true },
-      _count: { customer_id: true },
-    })
+    // Per-shop POS revenue from the refund-adjusted orders above (Head
+    // Office's order list already covers every shop).
+    const posByShop = [...posOrders.reduce((m, o) => m.set(o.shop_id, (m.get(o.shop_id) || 0) + o.grand_total), new Map<number, number>())]
+      .map(([shop_id, total]) => ({ shop_id, _sum: { grand_total: total } }))
     const tailorByShop = await prisma.tbl_tailor_order.groupBy({
       by: ['shop_id'],
       where: { order_date: { gte: start, lte: end }, status: { not: 'cancelled' } },

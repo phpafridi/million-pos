@@ -1,6 +1,7 @@
 'use server'
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
+import { NET_ORDERS } from '@/lib/netOrdersSql'
 
 export async function getRevenue() {
   const scope = await getShopScope()
@@ -11,12 +12,12 @@ export async function getRevenue() {
   const posResult: any[] = allShops
     ? await prisma.$queryRaw`
         SELECT COALESCE(SUM(CAST(grand_total AS DOUBLE)), 0) AS total
-        FROM tbl_order
+        FROM ${NET_ORDERS} AS tbl_order
         WHERE order_status IN (2, 4)
       `
     : await prisma.$queryRaw`
         SELECT COALESCE(SUM(CAST(grand_total AS DOUBLE)), 0) AS total
-        FROM tbl_order
+        FROM ${NET_ORDERS} AS tbl_order
         WHERE order_status IN (2, 4) AND shop_id = ${scope.shopId}
       `
 

@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getShopScope, scopeWhere } from '@/lib/getShopScope'
+import { getRefundsByOrder } from '@/lib/orderRefunds'
 
 export type SerializedInvoice = {
   invoice_id: number
@@ -12,7 +13,9 @@ export type SerializedInvoice = {
   order: {
     order_no: number
     order_number: string | null
+    order_status: number
     grand_total: number
+    refunded_amount: number   // money refunded on this invoice (payment returns)
     sub_total: number
     discount: number
     discount_amount: number
@@ -43,6 +46,8 @@ export async function FetchInvoices(): Promise<SerializedInvoice[]> {
       },
     })
 
+    const refunds = await getRefundsByOrder(invoices.map(i => i.order_id))
+
     return invoices.map((inv) => ({
       invoice_id: inv.invoice_id,
       invoice_no: inv.invoice_no,
@@ -52,7 +57,9 @@ export async function FetchInvoices(): Promise<SerializedInvoice[]> {
       order: {
         order_no: inv.order.order_no,
         order_number: inv.order.order_number,
+        order_status: inv.order.order_status,
         grand_total: Number(inv.order.grand_total),
+        refunded_amount: refunds.get(inv.order_id)?.amount ?? 0,
         sub_total: Number(inv.order.sub_total),
         discount: Number(inv.order.discount),
         discount_amount: Number(inv.order.discount_amount),

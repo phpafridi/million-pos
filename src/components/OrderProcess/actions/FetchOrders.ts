@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getShopScope, scopeWhere } from '@/lib/getShopScope'
+import { getRefundsByOrder } from '@/lib/orderRefunds'
 
 export type SerializedOrder = {
   order_id: number
@@ -10,6 +11,7 @@ export type SerializedOrder = {
   order_date: string
   order_status: number
   grand_total: number
+  refunded_amount: number   // money refunded on this order (payment returns)
   sales_person: string
   customer: {
     customer_id: number
@@ -64,6 +66,8 @@ export async function FetchOrders(): Promise<SerializedOrder[]> {
       },
     })
 
+    const refunds = await getRefundsByOrder(orders.map(o => o.order_id))
+
     return orders.map((order) => ({
       order_id: order.order_id,
       order_no: order.order_no,
@@ -71,6 +75,7 @@ export async function FetchOrders(): Promise<SerializedOrder[]> {
       order_date: order.order_date.toISOString(),
       order_status: order.order_status,
       grand_total: Number(order.grand_total), // Convert Decimal to number
+      refunded_amount: refunds.get(order.order_id)?.amount ?? 0,
       sales_person: order.sales_person,
       customer: {
         customer_id: order.customer.customer_id,

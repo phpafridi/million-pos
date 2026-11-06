@@ -1,6 +1,7 @@
 'use server'
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
+import { NET_ORDERS } from '@/lib/netOrdersSql'
 
 // One point per day; each active shop gets its own key (by shop_name) so
 // the chart can draw one line per franchise, clearly labeled.
@@ -48,14 +49,14 @@ export async function getRevenueTrend(days: number = 14): Promise<{ points: Dail
   const rows: any[] = allShops
     ? await prisma.$queryRaw`
         SELECT DATE_FORMAT(o.order_date, '%Y-%m-%d') AS day, s.shop_name AS shop_name, COALESCE(SUM(CAST(o.grand_total AS DOUBLE)), 0) AS total
-        FROM tbl_order o
+        FROM ${NET_ORDERS} o
         JOIN tbl_shop s ON s.shop_id = o.shop_id
         WHERE o.order_status IN (2, 4) AND o.order_date >= ${start}
         GROUP BY DATE_FORMAT(o.order_date, '%Y-%m-%d'), s.shop_name
       `
     : await prisma.$queryRaw`
         SELECT DATE_FORMAT(o.order_date, '%Y-%m-%d') AS day, s.shop_name AS shop_name, COALESCE(SUM(CAST(o.grand_total AS DOUBLE)), 0) AS total
-        FROM tbl_order o
+        FROM ${NET_ORDERS} o
         JOIN tbl_shop s ON s.shop_id = o.shop_id
         WHERE o.order_status IN (2, 4) AND o.order_date >= ${start} AND o.shop_id = ${scope.shopId}
         GROUP BY DATE_FORMAT(o.order_date, '%Y-%m-%d'), s.shop_name

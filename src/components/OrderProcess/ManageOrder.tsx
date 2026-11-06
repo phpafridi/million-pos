@@ -13,7 +13,19 @@ const STATUS_LABEL: Record<number, { text: string; className: string }> = {
   0: { text: 'Pending', className: 'label-warning' },
   1: { text: 'Cancelled', className: 'label-danger' },
   2: { text: 'Completed', className: 'label-success' },
+  3: { text: 'Refunded', className: 'label-danger' },
+  4: { text: 'Exchanged', className: 'label-info' },
 }
+
+// A refund marks the whole order as status 3 even when only some items came
+// back, so tell the two apart by how much was actually refunded.
+const statusOf = (o: SerializedOrder) => {
+  if (o.order_status === 3 && o.refunded_amount > 0 && o.refunded_amount < o.grand_total - 0.005) {
+    return { text: 'Partially Refunded', className: 'label-warning' }
+  }
+  return STATUS_LABEL[o.order_status] || { text: 'Unknown', className: 'label-default' }
+}
+const netTotal = (o: SerializedOrder) => Math.max(0, o.grand_total - (o.refunded_amount || 0))
 
 export default function ManageOrder() {
   const { data: session } = useSession()
@@ -177,7 +189,7 @@ export default function ManageOrder() {
                     <tr><td colSpan={7} className="text-center"><strong>Loading orders...</strong></td></tr>
                   ) : currentOrders.length > 0 ? (
                     currentOrders.map((order, i) => {
-                      const status = STATUS_LABEL[order.order_status] || STATUS_LABEL[2]
+                      const status = statusOf(order)
                       return (
                         <tr key={order.order_id} className="text-center">
                           <td>{indexOfFirstItem + i + 1}</td>
@@ -192,7 +204,14 @@ export default function ManageOrder() {
                           </td>
                           <td>{new Date(order.order_date).toLocaleDateString()}</td>
                           <td><span className={`label ${status.className}`}>{status.text}</span></td>
-                          <td><strong>{currency} {order.grand_total}</strong></td>
+                          <td>
+                            <strong>{currency} {Number(netTotal(order).toFixed(2))}</strong>
+                            {order.refunded_amount > 0 && (
+                              <div style={{ fontSize: 11, color: '#d9534f' }}>
+                                <s style={{ color: '#999' }}>{order.grand_total}</s> − {order.refunded_amount} refunded
+                              </div>
+                            )}
+                          </td>
                           <td>{order.sales_person}</td>
                           <td>
                             <div className="btn-group">

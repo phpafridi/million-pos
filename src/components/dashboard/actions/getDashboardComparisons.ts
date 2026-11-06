@@ -1,6 +1,7 @@
 'use server'
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
+import { NET_ORDERS } from '@/lib/netOrdersSql'
 
 export type KpiComparison = {
   current: number
@@ -12,12 +13,12 @@ async function revenueBetween(start: Date, end: Date, allShops: boolean, shopId:
   const result: any[] = allShops
     ? await prisma.$queryRaw`
         SELECT COALESCE(SUM(CAST(grand_total AS DOUBLE)), 0) AS total
-        FROM tbl_order
+        FROM ${NET_ORDERS} AS tbl_order
         WHERE order_status IN (2, 4) AND order_date >= ${start} AND order_date < ${end}
       `
     : await prisma.$queryRaw`
         SELECT COALESCE(SUM(CAST(grand_total AS DOUBLE)), 0) AS total
-        FROM tbl_order
+        FROM ${NET_ORDERS} AS tbl_order
         WHERE order_status IN (2, 4) AND order_date >= ${start} AND order_date < ${end} AND shop_id = ${shopId}
       `
   return Number(result[0]?.total || 0)
@@ -40,8 +41,8 @@ async function purchasesBetween(start: Date, end: Date, allShops: boolean, shopI
 
 async function orderCountBetween(start: Date, end: Date, allShops: boolean, shopId: number | null): Promise<number> {
   const result: any[] = allShops
-    ? await prisma.$queryRaw`SELECT COUNT(*) AS cnt FROM tbl_order WHERE order_status IN (2, 4) AND order_date >= ${start} AND order_date < ${end}`
-    : await prisma.$queryRaw`SELECT COUNT(*) AS cnt FROM tbl_order WHERE order_status IN (2, 4) AND order_date >= ${start} AND order_date < ${end} AND shop_id = ${shopId}`
+    ? await prisma.$queryRaw`SELECT COUNT(*) AS cnt FROM ${NET_ORDERS} AS tbl_order WHERE order_status IN (2, 4) AND order_date >= ${start} AND order_date < ${end}`
+    : await prisma.$queryRaw`SELECT COUNT(*) AS cnt FROM ${NET_ORDERS} AS tbl_order WHERE order_status IN (2, 4) AND order_date >= ${start} AND order_date < ${end} AND shop_id = ${shopId}`
   return Number(result[0]?.cnt || 0)
 }
 

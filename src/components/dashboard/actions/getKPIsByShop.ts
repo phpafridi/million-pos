@@ -1,6 +1,8 @@
 'use server'
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
+import { NET_ORDERS } from '@/lib/netOrdersSql'
+import { posProfitByShop } from '@/lib/posProfit'
 
 export type ShopKPI = {
   shop_id: number
@@ -30,7 +32,7 @@ export async function getKPIsByShop(): Promise<ShopKPI[]> {
       COALESCE(SUM(CAST(total_tax AS DOUBLE)), 0) AS tax,
       COALESCE(SUM(CAST(discount_amount AS DOUBLE)), 0) AS discount,
       COUNT(*) AS sales_count
-    FROM tbl_order
+    FROM ${NET_ORDERS} AS tbl_order
     WHERE order_status IN (2, 4)
     GROUP BY shop_id
   `
@@ -55,6 +57,7 @@ export async function getKPIsByShop(): Promise<ShopKPI[]> {
     GROUP BY i.shop_id
   `
 
+  const profitMap = await posProfitByShop()
   const salesMap = new Map(salesRows.map((r) => [r.shop_id, r]))
   const tailorMap = new Map(tailorRows.map((r) => [r.shop_id, r]))
   const stockMap = new Map(stockRows.map((r) => [r.shop_id, Number(r.stock_value || 0)]))
@@ -63,15 +66,14 @@ export async function getKPIsByShop(): Promise<ShopKPI[]> {
     const sales = salesMap.get(s.shop_id)
     const tailor = tailorMap.get(s.shop_id)
     const posRevenue = Number(sales?.revenue || 0)
-    const tax = Number(sales?.tax || 0)
-    const discount = Number(sales?.discount || 0)
     const tailorIncome = Number(tailor?.tailor_income || 0)
     return {
       shop_id: s.shop_id,
       shop_name: s.shop_name,
       shop_code: s.shop_code,
       revenue: posRevenue + tailorIncome,
-      profit: (posRevenue - tax - discount) + tailorIncome,
+      // Real profit: selling − cost − discount, after refunds (see posProfit.ts)
+      profit: (profitMap.get(s.shop_id) ?? 0) + tailorIncome,
       sales_count: Number(sales?.sales_count || 0) + Number(tailor?.tailor_count || 0),
       stock_value: stockMap.get(s.shop_id) || 0,
     }

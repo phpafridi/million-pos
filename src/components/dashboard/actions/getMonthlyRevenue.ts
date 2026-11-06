@@ -1,6 +1,7 @@
 'use server'
 import { prisma } from '@/lib/prisma'
 import { getShopScope } from '@/lib/getShopScope'
+import { NET_ORDERS } from '@/lib/netOrdersSql'
 
 export type MonthlyRevenuePoint = { month: string; pos: number; tailor: number; total: number }
 
@@ -17,13 +18,13 @@ export async function getMonthlyRevenue(monthsBack: number = 12): Promise<Monthl
   const posRows: any[] = allShops
     ? await prisma.$queryRaw`
         SELECT DATE_FORMAT(order_date, '%Y-%m') AS ym, COALESCE(SUM(CAST(grand_total AS DOUBLE)), 0) AS total
-        FROM tbl_order
+        FROM ${NET_ORDERS} AS tbl_order
         WHERE order_status IN (2, 4) AND order_date >= ${start}
         GROUP BY DATE_FORMAT(order_date, '%Y-%m')
       `
     : await prisma.$queryRaw`
         SELECT DATE_FORMAT(order_date, '%Y-%m') AS ym, COALESCE(SUM(CAST(grand_total AS DOUBLE)), 0) AS total
-        FROM tbl_order
+        FROM ${NET_ORDERS} AS tbl_order
         WHERE order_status IN (2, 4) AND order_date >= ${start} AND shop_id = ${scope.shopId}
         GROUP BY DATE_FORMAT(order_date, '%Y-%m')
       `

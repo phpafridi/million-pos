@@ -7,6 +7,16 @@ import Link from 'next/link'
 import { fetchCurrency } from '../settings/actions/fetchCurrency'
 import { hasPermission } from '@/lib/clientPermissions'
 
+// What the invoice is worth after refunds (a refund can be for part of it).
+const netOf = (inv: SerializedInvoice) => Math.max(0, inv.order.grand_total - (inv.order.refunded_amount || 0))
+const refundBadge = (inv: SerializedInvoice) => {
+  const r = inv.order.refunded_amount || 0
+  if (r <= 0) return null
+  return r < inv.order.grand_total - 0.005
+    ? { text: 'Partially Refunded', className: 'label-warning' }
+    : { text: 'Refunded', className: 'label-danger' }
+}
+
 export default function ManageInvoice() {
   const { data: session } = useSession()
   const canView = hasPermission(session, 'action:view-invoice', 'view')
@@ -39,6 +49,8 @@ export default function ManageInvoice() {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
   const currentInvoices = itemsPerPage === -1 ? filteredInvoices : filteredInvoices.slice(indexOfFirstItem, indexOfLastItem)
   const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage)
+  const netRevenue = invoices.reduce((s, i) => s + netOf(i), 0)
+  const refundedTotal = invoices.reduce((s, i) => s + (i.order.refunded_amount || 0), 0)
 
   return (
     <div className="right-side" style={{ minHeight: '945px' }}>
@@ -62,13 +74,13 @@ export default function ManageInvoice() {
               </div>
               <div className="col-md-4">
                 <div className="small-box bg-green">
-                  <div className="inner"><h3>{currency} {invoices.reduce((s, i) => s + Number(i.order.grand_total), 0).toFixed(0)}</h3><p>Total Revenue</p></div>
+                  <div className="inner"><h3>{currency} {netRevenue.toFixed(0)}</h3><p>Total Revenue{refundedTotal > 0 ? ` (after ${currency} ${refundedTotal.toFixed(0)} refunds)` : ''}</p></div>
                   <div className="icon"><i className="fa fa-money"></i></div>
                 </div>
               </div>
               <div className="col-md-4">
                 <div className="small-box bg-purple">
-                  <div className="inner"><h3>{currency} {invoices.length > 0 ? (invoices.reduce((s, i) => s + Number(i.order.grand_total), 0) / invoices.length).toFixed(0) : '0'}</h3><p>Average Invoice</p></div>
+                  <div className="inner"><h3>{currency} {invoices.length > 0 ? (netRevenue / invoices.length).toFixed(0) : '0'}</h3><p>Average Invoice</p></div>
                   <div className="icon"><i className="fa fa-calculator"></i></div>
                 </div>
               </div>
@@ -153,7 +165,17 @@ export default function ManageInvoice() {
                         <td>{new Date(inv.invoice_date).toLocaleDateString()}</td>
                         <td>{inv.order.customer.customer_name}</td>
                         <td className="text-capitalize">{inv.order.payment_method}</td>
-                        <td><strong>{currency} {inv.order.grand_total.toFixed(2)}</strong></td>
+                        <td>
+                          <strong>{currency} {netOf(inv).toFixed(2)}</strong>
+                          {refundBadge(inv) && (
+                            <div style={{ fontSize: 11, marginTop: 2 }}>
+                              <span className={`label ${refundBadge(inv)!.className}`}>{refundBadge(inv)!.text}</span>{' '}
+                              <span style={{ color: '#d9534f' }}>
+                                <s style={{ color: '#999' }}>{inv.order.grand_total.toFixed(2)}</s> − {inv.order.refunded_amount.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                        </td>
                         <td>
                           {canView ? (
                             <Link href={`/dashboard/order-process/invoice/${inv.order_id}?isOrder=false`}>

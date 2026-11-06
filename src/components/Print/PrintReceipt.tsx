@@ -54,6 +54,10 @@ type PrintReceiptProps = {
   loyaltyPointsRedeemed?: number
   loyaltyPointsBalance?: number
   tailorDetails?: TailorReceiptDetails
+  /** Money refunded on this order so far — printed on reprints. */
+  refund?: { amount: number; items: { product_name: string; qty: number; amount: number }[] }
+  /** Marks the slip as a copy printed later from the order/invoice page. */
+  isReprint?: boolean
 }
 
 type PrinterLayout = {
@@ -104,7 +108,10 @@ export default function PrintReceipt({
   loyaltyPointsRedeemed,
   loyaltyPointsBalance,
   tailorDetails,
+  refund,
+  isReprint,
 }: PrintReceiptProps) {
+  const refundAmt = Math.max(0, Number(refund?.amount) || 0)
   const [currency, setCurrency] = useState<string>("")
   const [companyLogo, setCompanyLogo] = useState<string>("")
   const [companyName, setCompanyName] = useState<string>("")
@@ -304,10 +311,13 @@ export default function PrintReceipt({
           </>
         )}
 
+        {isReprint && <Text align="center" bold={true}>*** REPRINT ***</Text>}
         <Text size={{ width: 2, height: 2 }}>
-          {currency}{paidAmount.toFixed(2)}
+          {currency}{Math.max(0, paidAmount - refundAmt).toFixed(2)}
         </Text>
-        {paidAmount >= grandTotal ? (
+        {refundAmt > 0 ? (
+          <Text bold={true}>{refundAmt >= grandTotal - 0.005 ? 'Refunded' : 'Partially Refunded'}</Text>
+        ) : paidAmount >= grandTotal ? (
           <Text bold={true}>Payment Complete</Text>
         ) : (
           <>
@@ -351,7 +361,12 @@ export default function PrintReceipt({
         ) : null}
         <Row left="Order Total" right={`${currency}${grandTotal.toFixed(2)}`} />
         <Row left="Paid" right={`${currency}${paidAmount.toFixed(2)}`} />
-        {paidAmount >= grandTotal ? (
+        {refundAmt > 0 ? (
+          <>
+            <Row left="Refunded" right={`- ${currency}${refundAmt.toFixed(2)}`} />
+            <Row left="Net Paid" right={`${currency}${Math.max(0, paidAmount - refundAmt).toFixed(2)}`} />
+          </>
+        ) : paidAmount >= grandTotal ? (
           <Row left="Change" right={`${currency}${changeAmount.toFixed(2)}`} />
         ) : (
           <Row left="Balance Due" right={`${currency}${(grandTotal - paidAmount).toFixed(2)}`} />
@@ -383,6 +398,17 @@ export default function PrintReceipt({
           <Row left="Tax" right={`${currency}${cart.reduce((sum, i) => sum + (i.taxAmount ?? 0), 0).toFixed(2)}`} />
         )}
         <Row left="Grand Total" right={`${currency}${grandTotal.toFixed(2)}`} />
+        {refundAmt > 0 && (
+          <>
+            <Line />
+            <Text bold={true}>Returned / Refunded:</Text>
+            {(refund?.items || []).map((it, i) => (
+              <Row key={i} left={`${it.product_name} x${it.qty}`} right={`- ${currency}${it.amount.toFixed(2)}`} />
+            ))}
+            <Row left="Total Refunded" right={`- ${currency}${refundAmt.toFixed(2)}`} />
+            <Row left="Net Total" right={`${currency}${Math.max(0, grandTotal - refundAmt).toFixed(2)}`} />
+          </>
+        )}
         <Line />
 
         {(loyaltyPointsEarned || loyaltyPointsRedeemed) ? (

@@ -10,6 +10,7 @@ import ReturnInvoice from './ReturnInvoice'
 import FetchProducts from '../Product/actions/FetchProduct'
 import { useSession } from 'next-auth/react'
 import { hasPermission } from '@/lib/clientPermissions'
+import { paidShare } from '@/lib/refundMath'
 import PrintReceipt from '../Print/PrintReceipt'
 
 type OrderDetail = {
@@ -237,8 +238,10 @@ export default function ViewInvoice({ id, isOrder }: Props) {
 
   const canReturn = order.order_status === 2
 
-  // Money refunded so far (payment returns only — exchanges move no money).
-  const refundedAmount = Math.round(returns
+  // Money refunded so far (payment returns only — exchanges move no money),
+  // valued at what the customer actually paid (see paidShare).
+  const refundShare = paidShare(order.grand_total, order.sub_total)
+  const refundedAmount = Math.round(refundShare * returns
     .filter(r => r.return_type === 'payment')
     .reduce((s, r) => s + r.items.filter(i => i.item_type === 'returned').reduce((a, i) => a + Number(i.sub_total), 0), 0) * 100) / 100
   const netAfterRefund = Math.max(0, order.grand_total - refundedAmount)
@@ -391,7 +394,7 @@ export default function ViewInvoice({ id, isOrder }: Props) {
                         </strong>
                         {returns.map((r) => (
                           <div key={r.return_id} style={{ marginTop: 6, background: '#fff8f8', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 10px', fontSize: 13 }}>
-                            <strong>RET-{r.return_no}</strong> — {r.return_type === 'payment' ? `Payment Refund ${r.items.filter(i => i.item_type === 'returned').reduce((a, i) => a + Number(i.sub_total), 0).toFixed(2)}` : 'Exchange'} — {new Date(r.return_date).toLocaleDateString()} — by {r.processed_by}
+                            <strong>RET-{r.return_no}</strong> — {r.return_type === 'payment' ? `Payment Refund ${(refundShare * r.items.filter(i => i.item_type === 'returned').reduce((a, i) => a + Number(i.sub_total), 0)).toFixed(2)}` : 'Exchange'} — {new Date(r.return_date).toLocaleDateString()} — by {r.processed_by}
                             {r.note && <span className="text-muted"> | Note: {r.note}</span>}
                           </div>
                         ))}
@@ -506,6 +509,14 @@ export default function ViewInvoice({ id, isOrder }: Props) {
         orderNo={order.order_no}
         orderDate={order.datetime}
         salesPerson={order.sales_person}
+        isReprint={true}
+        refund={refundedAmount > 0 ? {
+          amount: refundedAmount,
+          items: returns
+            .filter(r => r.return_type === 'payment')
+            .flatMap(r => r.items.filter(i => i.item_type === 'returned'))
+            .map(i => ({ product_name: i.product_name, qty: Number(i.qty), amount: Math.round(Number(i.sub_total) * refundShare * 100) / 100 })),
+        } : undefined}
       />
     </div>
   )

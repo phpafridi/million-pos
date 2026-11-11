@@ -32,7 +32,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     if (body.is_default) {
       // Only un-default this shop's OTHER printers — not every franchise's.
-      await prisma.tbl_printer_setting.updateMany({ where: { shop_id: existing.shop_id }, data: { is_default: false } });
+      // One default per printer type, so making a label printer default
+      // doesn't take the default away from the receipt printer.
+      await prisma.tbl_printer_setting.updateMany({ where: { shop_id: existing.shop_id, applies_to: data.applies_to ?? existing.applies_to }, data: { is_default: false } });
       data.is_default = true;
     }
 

@@ -2,6 +2,13 @@
 import React, { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog'
+import { DEFAULT_LABEL_LAYOUT, LABEL_PRESETS, LabelLayout, readLabelLayout, renderLabel } from '@/lib/labelLayout'
+
+const isLabelType = (a: string) => a === 'barcode' || a === 'qr'
+const APPLIES_LABEL: Record<string, string> = {
+  all: 'All Documents', invoice: 'Invoice', receipt: 'Sale Receipt', return: 'Return Slip',
+  purchase: 'Purchase Invoice', barcode: 'Barcode Labels', qr: 'QR Code Labels',
+}
 
 type Layout = {
   showLogo: boolean
@@ -52,6 +59,22 @@ export default function ManagePrinterSettings() {
   const [isDefault, setIsDefault] = useState(false)
   const [layout, setLayout] = useState<Layout>(defaultLayout)
   const [saving, setSaving] = useState(false)
+  const [label, setLabel] = useState<LabelLayout>(DEFAULT_LABEL_LAYOUT)
+  const [labelPreview, setLabelPreview] = useState('')
+  const labelMode = isLabelType(appliesTo)
+  const presetKey = `${label.labelWidthMm}x${label.labelHeightMm}`
+  const isPreset = LABEL_PRESETS.some(([w, h]) => `${w}x${h}` === presetKey)
+  const [customSize, setCustomSize] = useState(false)
+
+  // Live preview of a label printer's output, drawn exactly as it will print.
+  useEffect(() => {
+    if (!labelMode || label.labelWidthMm < 10 || label.labelHeightMm < 10) { setLabelPreview(''); return }
+    let cancelled = false
+    renderLabel({ kind: appliesTo === 'qr' ? 'qr' : 'barcode', value: 'M-15', name: 'Sample Product Name 44', price: 2500, currency: 'Rs' }, label)
+      .then(url => { if (!cancelled) setLabelPreview(url) })
+      .catch(() => { if (!cancelled) setLabelPreview('') })
+    return () => { cancelled = true }
+  }, [labelMode, appliesTo, label])
 
   const getPrinters = async () => {
     try {
@@ -77,10 +100,10 @@ export default function ManagePrinterSettings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           printer_name: name,
-          paper_width_mm: paperWidth,
+          paper_width_mm: labelMode ? Math.round(label.labelWidthMm) : paperWidth,
           applies_to: appliesTo,
           is_default: isDefault,
-          layout,
+          layout: labelMode ? label : layout,
         }),
       })
       const json = await res.json()
@@ -89,6 +112,8 @@ export default function ManagePrinterSettings() {
         setName('')
         setIsDefault(false)
         setLayout(defaultLayout)
+        setLabel(DEFAULT_LABEL_LAYOUT)
+        setCustomSize(false)
         getPrinters()
       } else {
         toast.error(json.error || 'Failed to save printer')
@@ -148,7 +173,7 @@ export default function ManagePrinterSettings() {
             <div className="col-md-12">
               <div className="box box-primary">
                 <div className="box-header box-header-background with-border text-center">
-                  <h3 className="box-title">Add / Configure Thermal Printer</h3>
+                  <h3 className="box-title">Add / Configure Printer (receipts, barcode &amp; QR labels)</h3>
                 </div>
 
                 <div className="box-background text-center">
@@ -162,7 +187,7 @@ export default function ManagePrinterSettings() {
                         </div>
 
                         <div className="row">
-                          <div className="col-md-6">
+                          {!labelMode && <div className="col-md-6">
                             <div className="form-group text-center">
                               <label>Paper Width</label>
                               <select className="form-control text-center" value={paperWidth} onChange={(e) => setPaperWidth(Number(e.target.value))}>
@@ -170,8 +195,8 @@ export default function ManagePrinterSettings() {
                                 <option value={80}>80mm</option>
                               </select>
                             </div>
-                          </div>
-                          <div className="col-md-6">
+                          </div>}
+                          <div className={labelMode ? 'col-md-12' : 'col-md-6'}>
                             <div className="form-group text-center">
                               <label>Applies To</label>
                               <select className="form-control text-center" value={appliesTo} onChange={(e) => setAppliesTo(e.target.value)}>
@@ -181,11 +206,72 @@ export default function ManagePrinterSettings() {
                                 <option value="return">Return Slip</option>
                                 <option value="purchase">Purchase Invoice</option>
                                 <option value="barcode">Barcode Labels</option>
+                                <option value="qr">QR Code Labels</option>
                               </select>
                             </div>
                           </div>
                         </div>
 
+                        {labelMode && (
+                          <div style={{ maxWidth: 520, margin: '0 auto' }}>
+                            <div className="form-group text-center">
+                              <label>Label Size (width × height)</label>
+                              <select className="form-control text-center"
+                                value={customSize || !isPreset ? 'custom' : presetKey}
+                                onChange={(e) => {
+                                  if (e.target.value === 'custom') { setCustomSize(true); return }
+                                  const [w, h] = e.target.value.split('x').map(Number)
+                                  setCustomSize(false)
+                                  setLabel({ ...label, labelWidthMm: w, labelHeightMm: h })
+                                }}>
+                                {LABEL_PRESETS.map(([w, h]) => <option key={`${w}x${h}`} value={`${w}x${h}`}>{w} × {h} mm</option>)}
+                                <option value="custom">Custom size…</option>
+                              </select>
+                            </div>
+                            {(customSize || !isPreset) && (
+                              <div className="row">
+                                <div className="col-xs-6">
+                                  <div className="form-group text-center">
+                                    <label>Width (mm)</label>
+                                    <input type="number" min={10} max={200} step="any" className="form-control text-center"
+                                      value={label.labelWidthMm} onChange={(e) => setLabel({ ...label, labelWidthMm: Number(e.target.value) || 0 })} />
+                                  </div>
+                                </div>
+                                <div className="col-xs-6">
+                                  <div className="form-group text-center">
+                                    <label>Height (mm)</label>
+                                    <input type="number" min={10} max={300} step="any" className="form-control text-center"
+                                      value={label.labelHeightMm} onChange={(e) => setLabel({ ...label, labelHeightMm: Number(e.target.value) || 0 })} />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            <div className="row text-left">
+                              {([
+                                ['showName', 'Show product name'],
+                                ['showPrice', 'Show price'],
+                                ['showCode', 'Show code text'],
+                              ] as [keyof LabelLayout, string][]).map(([key, text]) => (
+                                <div className="col-md-4" key={key}>
+                                  <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                    <input type="checkbox" checked={Boolean(label[key])}
+                                      onChange={(e) => setLabel({ ...label, [key]: e.target.checked })} />
+                                    {text}
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="form-group text-center" style={{ marginTop: 8 }}>
+                              <label style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
+                                <input type="checkbox" checked={label.rotate === 180}
+                                  onChange={(e) => setLabel({ ...label, rotate: e.target.checked ? 180 : 0 })} />
+                                Print upside down (turn on if labels come out upside down)
+                              </label>
+                            </div>
+                          </div>
+                        )}
+
+                        {!labelMode && <>
                         <div className="form-group text-center">
                           <label>Header Text (optional, printed above logo)</label>
                           <input type="text" value={layout.headerText}
@@ -242,6 +328,8 @@ export default function ManagePrinterSettings() {
                           ))}
                         </div>
 
+                        </>}
+
                         <div className="form-group text-center" style={{ marginTop: 12 }}>
                           <label style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
                             <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} />
@@ -258,6 +346,17 @@ export default function ManagePrinterSettings() {
 
                       <div className="col-md-5 col-sm-12 col-xs-12" style={{ marginTop: 8 }}>
                         <label style={{ display: 'block', marginBottom: 6 }}>Live Preview</label>
+                        {labelMode ? (
+                          <div>
+                            {labelPreview ? (
+                              <img src={labelPreview} alt="Label preview"
+                                style={{ width: Math.min(340, label.labelWidthMm * 5), border: '1px solid #ccc', borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', background: '#fff', imageRendering: 'pixelated' }} />
+                            ) : <p className="text-muted">Enter a label size to see the preview.</p>}
+                            <p className="text-muted" style={{ fontSize: 11, marginTop: 8 }}>
+                              Exactly what one {label.labelWidthMm} × {label.labelHeightMm} mm label will look like (sample product).
+                            </p>
+                          </div>
+                        ) : <>
                         <div style={{
                           background: '#fff', border: '1px solid #ccc', borderRadius: 4,
                           width: paperWidth >= 80 ? 280 : 210, margin: '0 auto', padding: '12px 10px',
@@ -302,6 +401,7 @@ export default function ManagePrinterSettings() {
                         <p className="text-muted" style={{ fontSize: 11, marginTop: 8 }}>
                           Approximate — the real receipt on a {paperWidth}mm thermal printer will look close to this.
                         </p>
+                        </>}
                       </div>
                     </div>
                   </form>
@@ -328,8 +428,10 @@ export default function ManagePrinterSettings() {
                       printers.map((p) => (
                         <tr key={p.printer_id} className="text-center">
                           <td>{p.printer_name}</td>
-                          <td>{p.paper_width_mm}mm</td>
-                          <td>{p.applies_to}</td>
+                          <td>{isLabelType(p.applies_to)
+                            ? (() => { const l = readLabelLayout(p.layout_json); return `${l.labelWidthMm} × ${l.labelHeightMm} mm label` })()
+                            : `${p.paper_width_mm}mm`}</td>
+                          <td>{APPLIES_LABEL[p.applies_to] || p.applies_to}</td>
                           <td>{p.is_default ? '✅' : ''}</td>
                           <td>
                             {!p.is_default && (

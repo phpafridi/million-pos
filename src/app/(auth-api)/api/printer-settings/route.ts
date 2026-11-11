@@ -36,8 +36,9 @@ export async function POST(req: Request) {
     }
 
     if (is_default) {
-      // only one default printer at a time, per shop — not across every franchise
-      await prisma.tbl_printer_setting.updateMany({ where: { shop_id }, data: { is_default: false } });
+      // One default per printer type per shop (a receipt printer and a label
+      // printer can both be default) — never across other franchises.
+      await prisma.tbl_printer_setting.updateMany({ where: { shop_id, applies_to }, data: { is_default: false } });
     }
 
     const printer = await prisma.tbl_printer_setting.create({
